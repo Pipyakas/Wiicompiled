@@ -13,7 +13,7 @@ option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
 option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
 # Dependency versions
-set(AURORA_DAWN_VERSION "v20260603.191052" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
+set(AURORA_DAWN_VERSION "v20260828.215121" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
 set(AURORA_SDL3_VERSION "3.4.4" CACHE STRING "SDL3 version tag (https://github.com/libsdl-org/SDL/releases)")
 set(AURORA_NOD_VERSION "v2.0.0-alpha.8" CACHE STRING "nod version tag (https://github.com/encounter/nod/releases)")
 set(AURORA_LIBUSB_VERSION "1.0.30" CACHE STRING "libusb version tag (https://github.com/libusb/libusb/releases)")

@@ -69,3 +69,29 @@ project.lock.json
 *.log
 output.txt
 
+# Android / Beryllium
+/.gradle/
+gradle/
+gradlew
+gradlew.bat
+beryllium.jks
+/app/build/
+/app/.cxx/
+local.properties
+*.jks
+*.keystore
+/Capture/
+/.externalNativeBuild/
+# Android / Beryllium
+/.gradle/
+gradle/
+gradlew
+gradlew.bat
+beryllium.jks
+/app/build/
+/app/.cxx/
+local.properties
+*.jks
+*.keystore
+/Capture/
+/.externalNativeBuild/
