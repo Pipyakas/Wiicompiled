@@ -247,6 +247,12 @@ PresentSource current_present_source() noexcept {
   };
 }
 
+#if defined(__ANDROID__)
+uint32_t present_source_override_active() noexcept {
+  return (g_presentSourceOverrideActive && g_presentSourceOverrideBindGroup != nullptr) ? 1u : 0u;
+}
+#endif
+
 void set_present_source_override(wgpu::BindGroup bindGroup, wgpu::Texture texture, wgpu::Extent3D size,
                                  wgpu::TextureFormat format) noexcept {
   g_presentSourceOverrideBindGroup = std::move(bindGroup);

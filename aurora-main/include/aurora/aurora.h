@@ -156,7 +156,8 @@ void aurora_request_frame_capture(uint32_t frame, const char* outputPath);
 #if defined(__ANDROID__)
 void aurora_get_sealed_frame_diagnostics(uint64_t* outDraws, uint64_t* outVertBytes,
                                          uint64_t* outUniformBytes, uint64_t* outTexBytes,
-                                         uint64_t* outSealed, uint32_t* outPsW, uint32_t* outPsH);
+                                         uint64_t* outSealed, uint32_t* outPsW, uint32_t* outPsH,
+                                         uint32_t* outPsIsXfb);
 #endif
 bool aurora_flush_efb_copies_to_ram();
 bool aurora_flush_efb_copy_to_ram(void* dest);

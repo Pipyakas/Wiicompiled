@@ -85,13 +85,13 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetRendererPresents(JNIEnv*, jo
 extern "C" JNIEXPORT jstring JNICALL
 Java_org_patchzyy_wiicompiled_GameActivity_nativeGetFrameDiagnostics(JNIEnv* env, jobject) {
     uint64_t draws = 0, vert = 0, uni = 0, tex = 0, sealed = 0;
-    uint32_t psw = 0, psh = 0;
-    aurora_get_sealed_frame_diagnostics(&draws, &vert, &uni, &tex, &sealed, &psw, &psh);
-    char buf[160];
-    std::snprintf(buf, sizeof(buf), "draws=%llu vert=%llu uni=%llu tex=%llu sealed=%llu ps=%ux%u",
+    uint32_t psw = 0, psh = 0, psxfb = 0;
+    aurora_get_sealed_frame_diagnostics(&draws, &vert, &uni, &tex, &sealed, &psw, &psh, &psxfb);
+    char buf[192];
+    std::snprintf(buf, sizeof(buf), "draws=%llu vert=%llu uni=%llu tex=%llu sealed=%llu ps=%ux%u%s",
         (unsigned long long)draws, (unsigned long long)vert,
         (unsigned long long)uni, (unsigned long long)tex,
-        (unsigned long long)sealed, psw, psh);
+        (unsigned long long)sealed, psw, psh, psxfb ? "[xfb]" : "[fb]");
     return env->NewStringUTF(buf);
 }
 

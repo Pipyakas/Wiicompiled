@@ -76,6 +76,7 @@ std::atomic<uint64_t> g_diagTexUploadBytes{0};
 std::atomic<uint64_t> g_diagFramesSealed{0};
 std::atomic<uint32_t> g_diagPsW{0};
 std::atomic<uint32_t> g_diagPsH{0};
+std::atomic<uint32_t> g_diagPsIsXfb{0};
 
 using PresentClock = std::chrono::steady_clock;
 
@@ -1386,6 +1387,9 @@ void seal_frame_locked(gfx::SealedFrame& sealedFrame, SealedFrameContext& ctx) {
   ctx.presentSource = webgpu::current_present_source();
   g_diagPsW.store(ctx.presentSource.size.width, std::memory_order_relaxed);
   g_diagPsH.store(ctx.presentSource.size.height, std::memory_order_relaxed);
+#if defined(__ANDROID__)
+  g_diagPsIsXfb.store(webgpu::present_source_override_active(), std::memory_order_relaxed);
+#endif
   // ImGui draw lists are built once per frame and replayed by each slot's ImGui pass, which is why
   // the next ImGui frame cannot start until the encode phase is done.
   imgui::render_frame_data();
@@ -1861,7 +1865,8 @@ void aurora_request_frame_capture(uint32_t frame, const char* outputPath) {
 // totals. Relaxed: diagnostic only, never a sync edge.
 void aurora_get_sealed_frame_diagnostics(uint64_t* outDraws, uint64_t* outVertBytes,
                                          uint64_t* outUniformBytes, uint64_t* outTexBytes,
-                                         uint64_t* outSealed, uint32_t* outPsW, uint32_t* outPsH) {
+                                         uint64_t* outSealed, uint32_t* outPsW, uint32_t* outPsH,
+                                         uint32_t* outPsIsXfb) {
   if (outDraws) *outDraws = aurora::g_diagDrawCalls.load(std::memory_order_relaxed);
   if (outVertBytes) *outVertBytes = aurora::g_diagVertBytes.load(std::memory_order_relaxed);
   if (outUniformBytes) *outUniformBytes = aurora::g_diagUniformBytes.load(std::memory_order_relaxed);
@@ -1869,6 +1874,7 @@ void aurora_get_sealed_frame_diagnostics(uint64_t* outDraws, uint64_t* outVertBy
   if (outSealed) *outSealed = aurora::g_diagFramesSealed.load(std::memory_order_relaxed);
   if (outPsW) *outPsW = aurora::g_diagPsW.load(std::memory_order_relaxed);
   if (outPsH) *outPsH = aurora::g_diagPsH.load(std::memory_order_relaxed);
+  if (outPsIsXfb) *outPsIsXfb = aurora::g_diagPsIsXfb.load(std::memory_order_relaxed);
 }
 #endif
 bool aurora_flush_efb_copies_to_ram() {

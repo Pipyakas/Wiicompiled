@@ -73,6 +73,11 @@ void resize_swapchain(uint32_t width, uint32_t height, uint32_t native_width, ui
 TextureWithSampler create_render_texture(uint32_t width, uint32_t height, bool multisampled);
 const TextureWithSampler& present_source() noexcept;
 PresentSource current_present_source() noexcept;
+#if defined(__ANDROID__)
+// 1 when the display-copy override (XFB resolve texture) is the latched
+// present source, 0 when the plain framebuffer is. Diagnostic only.
+uint32_t present_source_override_active() noexcept;
+#endif
 void set_present_source_override(wgpu::BindGroup bindGroup, wgpu::Texture texture, wgpu::Extent3D size,
                                  wgpu::TextureFormat format) noexcept;
 void clear_present_source_override() noexcept;
