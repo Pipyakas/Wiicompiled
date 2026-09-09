@@ -255,6 +255,26 @@ void EnsureInitializedLocked() {
     WriteGuestStateLocked();
 }
 
+// Commits VIFlush-armed pending display state (framebuffer, black flag,
+// timing) into the active state. Must run inside g_viMutex, before the
+// retrace bump, exactly as AdvanceRetrace does.
+void CommitPendingStateLocked() {
+    if (!g_vi.flushArmed) {
+        return;
+    }
+    g_vi.nextFrameBuffer = g_vi.pendingNextFrameBuffer;
+    g_vi.black = g_vi.pendingBlack;
+    g_vi.tvFormat = g_vi.pendingTvFormat;
+    g_vi.renderWidth = g_vi.pendingRenderWidth;
+    g_vi.renderHeight = g_vi.pendingRenderHeight;
+    g_vi.viXOrigin = g_vi.pendingViXOrigin;
+    g_vi.viYOrigin = g_vi.pendingViYOrigin;
+    g_vi.xfbWidth = g_vi.pendingXfbWidth;
+    g_vi.xfbHeight = g_vi.pendingXfbHeight;
+    g_vi.retraceInterval = g_vi.pendingRetraceInterval;
+    g_vi.flushArmed = false;
+}
+
 // GXRenderModeObj::viTVmode encodes the output family (0 NTSC, 1 PAL, 2 MPAL,
 // 5 EURGB60) in bits [4:2].
 uint32_t ExtractTvFormat(uint32_t tvMode) {
@@ -288,25 +308,7 @@ void AdvanceRetrace(CpuContext* ctx, Clock::time_point retraceStamp, bool servic
         std::lock_guard<std::mutex> lock(g_viMutex);
         EnsureInitializedLocked();
         
-        // Commit pending state if VIFlush armed it (see ViState).
-        if (g_vi.flushArmed) {
-            // Commit pending -> active
-            g_vi.nextFrameBuffer = g_vi.pendingNextFrameBuffer;
-            g_vi.black = g_vi.pendingBlack;
-            g_vi.tvFormat = g_vi.pendingTvFormat;
-            g_vi.renderWidth = g_vi.pendingRenderWidth;
-            g_vi.renderHeight = g_vi.pendingRenderHeight;
-            g_vi.viXOrigin = g_vi.pendingViXOrigin;
-            g_vi.viYOrigin = g_vi.pendingViYOrigin;
-            g_vi.xfbWidth = g_vi.pendingXfbWidth;
-            g_vi.xfbHeight = g_vi.pendingXfbHeight;
-            g_vi.retraceInterval = g_vi.pendingRetraceInterval;
-            
-            // Clear flush armed flag
-            g_vi.flushArmed = false;
-            
-        }
-        
+        CommitPendingStateLocked();
         g_vi.retraceCount++;
         g_vi.fieldOdd = !g_vi.fieldOdd;
         g_vi.currentFrameBuffer = g_vi.nextFrameBuffer;
@@ -911,15 +913,19 @@ extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
         EnsureInitializedLocked();
     }
     // One boundary per call; no OSSleepThread. AdvanceRetrace would bump a
-    // second time, so bump + wake + callbacks inline.
+    // second time, so bump + wake + callbacks inline. Shares AdvanceRetrace's
+    // locked update (pending-state commit, retrace bump, guest publish) so
+    // the two paths cannot drift.
     const uint32_t savedR3 = cpu->gpr[3];
     const uint32_t savedR28 = cpu->gpr[28];
     uint32_t preCb = 0, postCb = 0;
     {
         std::lock_guard<std::mutex> lock(g_viMutex);
         EnsureInitializedLocked();
+        CommitPendingStateLocked();
         g_vi.retraceCount += 1;
         g_vi.fieldOdd = !g_vi.fieldOdd;
+        g_vi.currentFrameBuffer = g_vi.nextFrameBuffer;
         g_vi.lastRetrace = Clock::now();
         preCb = g_vi.preRetraceCallback;
         postCb = g_vi.postRetraceCallback;
