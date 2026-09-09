@@ -905,6 +905,7 @@ PPC_NATIVE_OVERRIDE_VOID(801BAC48, VIGetCurrentLine_HLE_801bac48, (CpuContext* c
 extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
 {
     CpuContext* cpu = ctx ? ctx : &GetPersistentCpuContext();
+#if defined(__ANDROID__)
     {
         std::lock_guard<std::mutex> lock(g_viMutex);
         EnsureInitializedLocked();
@@ -950,6 +951,47 @@ extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
     NandProcessPendingCallbacks(cpu, 64);
     cpu->gpr[3] = savedR3;
     cpu->gpr[28] = savedR28;
+#else
+    if (Fiber::GuestFiberManager::IsInitialized()) {
+        const int32_t irqState = OS__DisableInterrupts_801a65ac();
+        uint32_t retraceCount = 0;
+        {
+            std::lock_guard<std::mutex> lock(g_viMutex);
+            EnsureInitializedLocked();
+            retraceCount = g_vi.retraceCount;
+        }
+
+        do {
+            cpu->gpr[3] = kViRetraceQueueAddr;
+            OSSleepThread_HLE_801aa9b8(cpu);
+
+            {
+                std::lock_guard<std::mutex> lock(g_viMutex);
+                EnsureInitializedLocked();
+                if (g_vi.retraceCount != retraceCount) {
+                    break;
+                }
+            }
+        } while (true);
+
+        OS__RestoreInterrupts_801a65d4(irqState);
+    } else {
+        std::chrono::microseconds interval{16666us};
+        Clock::time_point target;
+        {
+            std::lock_guard<std::mutex> lock(g_viMutex);
+            EnsureInitializedLocked();
+            interval = g_vi.retraceInterval;
+            target = g_vi.lastRetrace + interval;
+        }
+
+        const auto now = Clock::now();
+        if (now < target) {
+            SleepPreciselyUntil(target, true);
+        }
+        AdvanceRetrace(cpu, target, true);
+    }
+#endif
     ViSetR3(cpu, 0);
 }
 PPC_NATIVE_OVERRIDE_VOID(801B99EC, VIWaitForRetrace_HLE_801b99ec, (CpuContext* ctx), (ctx));

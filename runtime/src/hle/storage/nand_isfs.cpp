@@ -60,8 +60,8 @@ struct ISFSFileStats {
 static constexpr int32_t ISFS_DEV_FD = 1;
 static constexpr int32_t ES_DEV_FD = 3;
 static constexpr int32_t DOLPHIN_DEV_FD = 4;
-// Stable FD for /dev/di (DVD drive interface); ioctl 149 (Inquiry) is the
-// one the DVD state machine needs.
+// Stable FD for /dev/di (DVD drive interface), answered in the ioctl
+// handlers below instead of ENOENT.
 static constexpr int32_t DI_DEV_FD = 5;
 static constexpr uint32_t ES_IOCTL_GETDEVICEID = 0x07;
 static constexpr uint32_t ES_IOCTL_GETDEVICECERT = 0x1E;
@@ -388,10 +388,10 @@ extern "C" int32_t NAND_IOS_Open_HLE(uint32_t pathPtr, uint32_t mode) {
         if (std::strcmp(path, "/dev/dolphin") == 0) {
             return DOLPHIN_DEV_FD;
         }
-        // The DVD state machine issues IOS ioctl 149 on /dev/di (drive
-        // interface). Dolphin answers Inquiry/cover ioctls here; return a
-        // stable fd and answer in NAND_IOS_Ioctl_HLE instead of ENOENT, or
-        // the guest's stateReady loop never completes.
+        // The translated DVD state machine opens /dev/di (drive interface)
+        // for its Inquiry/cover ioctls. Answer with a stable fd handled in
+        // the ioctl paths below instead of ENOENT, or its ready loop never
+        // completes.
         if (std::strcmp(path, "/dev/di") == 0) {
             return DI_DEV_FD;
         }
@@ -581,19 +581,16 @@ extern "C" int32_t NAND_IOS_Ioctl_HLE(
         return ISFS_EINVAL;
     }
     // /dev/di answers the DVD drive ioctls the translated state machine
-    // issues (notably 149 = Inquiry). Cover closed, drive ready, no error.
+    // issues (notably Inquiry). Cover closed, drive ready, no error.
     // Layout mirrors Dolphin's DVDInterface: out[0..1] = drive state/cover.
     if (fd == DI_DEV_FD) {
-        if (outBufPtr && outLen >= 8) {
-            // The status read (IOS_Ioctl cmd122) is SYNCHRONOUS: our 0 lands
-            // in outBuf[0] before the issuer reads it at loc_80166710, and
-            // (0 + 0x1150000) != 0xDAED takes the error/OSReport path.
-            // Answer the hardware status word whose low 16 bits are 0xDAED:
-            // (0xFEEBDAED + 0x1150000) truncates to 0xDAED, passing the gate
-            // into the async Inquiry issue at loc_80166754.
+        if (outBufPtr != 0 && outLen >= 8 && Memory::Contains(outBufPtr, 8)) {
+            // The status read is SYNCHRONOUS: its result lands in outBuf[0]
+            // before the issuer checks it. Answer the hardware status word
+            // whose low 16 bits are 0xDAED (drive ready, no error) so the
+            // issuer proceeds to the async Inquiry instead of the error path.
             Memory::Write32(outBufPtr + 0, 0xFEEBDAEDu);
             Memory::Write32(outBufPtr + 4, 0); // cover closed
-            return ISFS_OK;
         }
         return ISFS_OK;
     }
@@ -1069,19 +1066,19 @@ extern "C" int32_t NAND_IOS_Ioctlv_HLE(
     }
 
     // /dev/di answers the DVD drive ioctls the translated state machine
-    // issues via IOS_Ioctlv (notably Inquiry cmd 18 through 0x801640B4).
+    // issues via IOS_Ioctlv (notably Inquiry through 0x801640B4).
     // Cover closed, drive ready, no error.
     if (fd == DI_DEV_FD) {
-        if (!vectorPtr ||
-            !Memory::Contains(vectorPtr, static_cast<size_t>(numIn + numOut) * 8u)) {
+        if (!IsValidGuestRange(vectorPtr, static_cast<uint32_t>((numIn + numOut) * 8u))) {
             return ISFS_EINVAL;
         }
         for (uint32_t i = numIn; i < numIn + numOut; ++i) {
             const IosVector out = ReadIosVector(vectorPtr, i);
-            if (out.address != 0 && out.size != 0 && Memory::Contains(out.address, out.size)) {
-                uint8_t* dst = Memory::GetPointer(out.address, out.size);
-                std::memset(dst, 0, out.size);
+            if (!IsValidGuestRange(out.address, out.size) || out.size == 0) {
+                continue;
             }
+            uint8_t* dst = Memory::GetPointer(out.address, out.size);
+            std::memset(dst, 0, out.size);
         }
         return ISFS_OK;
     }

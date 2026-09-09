@@ -35,9 +35,9 @@ extern "C" void GX__FinishInterruptHandler_8016ed94() {
         if (gd) Memory::Write16(gd + 0x0Au, static_cast<uint16_t>(Memory::Read16(gd + 0x0Au) | 0x0008u));
         Memory::Write8(kGxDrawDoneFlagAddr, 1);
     } catch (...) {}
-    // The hardware finish interrupt wakes the PE-finish thread queue that
-    // GXWaitDrawDone sleeps on (0x803867D0). The flag alone never unparks
-    // the waiter, so the strap display path wedges at 0x801AA9B8.
+    // The SDK's PE-finish waiter parks on the thread queue at 0x803867D0
+    // (see __GX__PEInit_8016ee14). The flag alone never unparks it, so wake
+    // the queue the way the hardware interrupt would.
     try {
         auto& cpu = GetPersistentCpuContext();
         const uint32_t savedR3 = cpu.gpr[3];
@@ -50,10 +50,9 @@ PPC_NATIVE_OVERRIDE_VOID(8016ed94, GX__FinishInterruptHandler_8016ed94, (), ());
 
 extern "C" void GX__DrawDone_8016eab0() {
     try { Memory::Write8(kGxDrawDoneFlagAddr, 0); } catch (...) {}
-    // Synchronous drain + finish on the calling thread: the PE interrupt
-    // this emulates would only fire after the queued work actually retired,
-    // and the handler now wakes 0x803867D0, so a waiter parked there gets
-    // woken here instead of wedging.
+    // GXDrawDone is the synchronous drain; the finish handler then delivers
+    // the completion (flag + PE-finish queue wake) on the calling thread,
+    // the way the hardware interrupt would after the queued work retired.
     GXDrawDone(); GX__FinishInterruptHandler_8016ed94();
 }
 PPC_NATIVE_OVERRIDE_VOID(8016eab0, GX__DrawDone_8016eab0, (), ());
