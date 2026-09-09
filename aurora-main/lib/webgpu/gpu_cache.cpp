@@ -1,7 +1,9 @@
 #include <atomic>
+#include <cstddef>
 #include <cstring>
 #include <ctime>
 #include <mutex>
+#include <span>
 #include <string>
 #include <filesystem>
 #include <vector>
@@ -259,12 +261,10 @@ static bool cache_init() {
   return true;
 }
 
-size_t load_from_cache(std::span<const std::byte> key, std::span<std::byte> value) {
+namespace {
+
+size_t load_from_cache_impl(const void* keyPtr, size_t keySize, void* valuePtr, size_t valueSize) {
   std::lock_guard lock(cache_mutex);
-  const uint8_t* keyPtr = reinterpret_cast<const uint8_t*>(key.data());
-  size_t keySize = key.size();
-  uint8_t* valuePtr = value.empty() ? nullptr : reinterpret_cast<uint8_t*>(value.data());
-  size_t valueSize = value.size();
   void* valueVoid = valuePtr;
 
   if (!cache_init()) {
@@ -277,13 +277,13 @@ size_t load_from_cache(std::span<const std::byte> key, std::span<std::byte> valu
     return 0;
   }
 
-  // Dawn probes with empty span for the size first, then fetches; count each
+  // Dawn probes with a null value for the size first, then fetches; count each
   // probe as one logical lookup so the hit rate reads per-entry.
   if (valueVoid == nullptr) {
     g_lookups.fetch_add(1, std::memory_order_relaxed);
   }
 
-  const auto keyHash = XXH128(key.data(), key.size(), 0);
+  const auto keyHash = XXH128(keyPtr, keySize, 0);
   check(sqlite3_bind_blob(load_stmt, 1, &keyHash, sizeof(keyHash), SQLITE_TRANSIENT));
 
   const auto ret = sqlite3_step(load_stmt);
@@ -340,12 +340,8 @@ size_t load_from_cache(std::span<const std::byte> key, std::span<std::byte> valu
   return foundSize;
 }
 
-void store_to_cache(std::span<const std::byte> key, std::span<const std::byte> value) {
+void store_to_cache_impl(const void* keyPtr, size_t keySize, const void* valuePtr, size_t valueSize) {
   std::lock_guard lock(cache_mutex);
-  const uint8_t* keyPtr = reinterpret_cast<const uint8_t*>(key.data());
-  size_t keySize = key.size();
-  const uint8_t* valuePtr = reinterpret_cast<const uint8_t*>(value.data());
-  size_t valueSize = value.size();
 
   if (!cache_init()) {
     return;
@@ -384,7 +380,7 @@ void store_to_cache(std::span<const std::byte> key, std::span<const std::byte> v
   }
 #endif
 
-  const auto keyHash = XXH128(key.data(), key.size(), 0);
+  const auto keyHash = XXH128(keyPtr, keySize, 0);
   check(sqlite3_bind_blob64(store_stmt, 1, &keyHash, sizeof(keyHash), SQLITE_TRANSIENT));
   check(
       sqlite3_bind_blob64(store_stmt, 2, storedValue, storedValueSize, compressed ? SQLITE_STATIC : SQLITE_TRANSIENT));
@@ -405,6 +401,27 @@ void store_to_cache(std::span<const std::byte> key, std::span<const std::byte> v
   check(sqlite3_bind_null(store_stmt, 4));
 
   tx.commit();
+}
+
+} // namespace
+
+// New Dawn API (>= ~202608xx): key/value arrive as spans.
+size_t load_from_cache(std::span<const std::byte> key, std::span<std::byte> value) {
+  return load_from_cache_impl(key.data(), key.size(),
+                              value.empty() ? nullptr : value.data(), value.size());
+}
+
+void store_to_cache(std::span<const std::byte> key, std::span<const std::byte> value) {
+  store_to_cache_impl(key.data(), key.size(), value.data(), value.size());
+}
+
+// Old Dawn API: raw pointer + size + userdata function pointers.
+size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valueSize, void*) {
+  return load_from_cache_impl(key, keySize, value, valueSize);
+}
+
+void store_to_cache(void const* key, size_t keySize, void const* value, size_t valueSize, void*) {
+  store_to_cache_impl(key, keySize, value, valueSize);
 }
 
 void cache_shutdown() {

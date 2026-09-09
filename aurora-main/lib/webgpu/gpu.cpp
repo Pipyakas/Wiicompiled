@@ -660,9 +660,23 @@ bool initialize(AuroraBackend auroraBackend) {
           "not safe on this device.");
     }
 #ifdef WEBGPU_DAWN
+    // DawnCacheDeviceDescriptor union-carries both cache APIs: the raw
+    // function-pointer members (honored by the v20260603 prebuilt) and the
+    // callback-info structs (honored by the v20260828 vendor build). Wire
+    // both; each Dawn honors its own side and ignores the other. The Set*
+    // helpers only accept the span-shaped callbacks, hence the wrappers.
     wgpu::DawnCacheDeviceDescriptor cacheDescriptor;
-    cacheDescriptor.SetDawnLoadCacheDataCallback(load_from_cache);
-    cacheDescriptor.SetDawnStoreCacheDataCallback(store_to_cache);
+    cacheDescriptor.loadDataFunction = load_from_cache;
+    cacheDescriptor.storeDataFunction = store_to_cache;
+    cacheDescriptor.functionUserdata = nullptr;
+    cacheDescriptor.SetDawnLoadCacheDataCallback(
+        [](std::span<const std::byte> key, std::span<std::byte> value) {
+          return load_from_cache(key, value);
+        });
+    cacheDescriptor.SetDawnStoreCacheDataCallback(
+        [](std::span<const std::byte> key, std::span<const std::byte> value) {
+          store_to_cache(key, value);
+        });
 
     std::vector<const char*> enableToggles{
     /* clang-format off */
