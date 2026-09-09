@@ -10,19 +10,32 @@ android {
         versionName "0.3.1-beryllium-vendor2"
         ndkVersion "27.1.12297006"
         ndk { abiFilters "arm64-v8a", "x86_64" }
-        def protocExe = System.getenv("TEMP") + "/protoc-35.1/bin/protoc.exe"
-        externalNativeBuild { cmake { arguments "-DANDROID_PLATFORM=android-30", "-DAURORA_DAWN_PROVIDER=vendor", "-DAURORA_ENABLE_DVD=ON", "-DCMAKE_BUILD_TYPE=Release", "-DPROTOC_EXECUTABLE=${protocExe}" } }
+        // Dawn builds protobuf from source when cross-compiling and needs a
+        // HOST protoc (the Android one can't run on the build machine), and
+        // its version must match Dawn's pinned protobuf (see
+        // dawn-src/third_party/protobuf/version.json — 35.x for Dawn
+        // v20260828). Provide one via PROTOC_EXECUTABLE env, else fall back
+        // to a TEMP/protoc-35.1 install (fetch protoc-35.1-win64.zip from
+        // github.com/protocolbuffers/protobuf).
+        def hostProtoc = System.getenv("PROTOC_EXECUTABLE") ?: (System.getenv("TEMP") + "/protoc-35.1/bin/protoc.exe")
+        externalNativeBuild { cmake { arguments "-DANDROID_PLATFORM=android-30", "-DAURORA_DAWN_PROVIDER=vendor", "-DAURORA_ENABLE_DVD=ON", "-DCMAKE_BUILD_TYPE=Release", "-DPROTOC_EXECUTABLE=${hostProtoc}" } }
     }
+    // beryllium.jks is gitignored (signing key, never committed). Only wire it
+    // up when present so fresh clones/CI still configure and build (unsigned).
+    def hasBerylliumKey = file("../beryllium.jks").exists()
     signingConfigs {
         release {
-            storeFile file("../beryllium.jks")
-            storePassword "beryllium"
-            keyAlias "beryllium"
-            keyPassword "beryllium"
+            if (hasBerylliumKey) {
+                storeFile file("../beryllium.jks")
+                storePassword "beryllium"
+                keyAlias "beryllium"
+                keyPassword "beryllium"
+            }
         }
     }
-    buildTypes { debug { debuggable true; jniDebuggable true; minifyEnabled false; signingConfig signingConfigs.release; packaging { jniLibs { keepDebugSymbols.add("**/*.so") } } }; release { signingConfig signingConfigs.release; minifyEnabled false } }
-    externalNativeBuild { cmake { path file("../runtime/CMakeLists.txt"); version "4.3.2" } }
+    buildTypes { debug { debuggable true; jniDebuggable true; minifyEnabled false; if (hasBerylliumKey) signingConfig signingConfigs.release; packaging { jniLibs { keepDebugSymbols.add("**/*.so") } } }; release { if (hasBerylliumKey) signingConfig signingConfigs.release; minifyEnabled false } }
+    // Must match an SDK cmake package under $ANDROID_HOME/cmake (NOT the system cmake).
+    externalNativeBuild { cmake { path file("../runtime/CMakeLists.txt"); version "4.1.2" } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     sourceSets { named("main") { assets.srcDirs("src/main/assets") } }
 }
