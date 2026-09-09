@@ -66,6 +66,16 @@ Module Log("aurora");
 
 std::atomic<uint32_t> g_captureFrame{UINT32_MAX};
 std::string g_captureOutputPath;
+// Android watchdog readback: mirrors of the sealed frame's content signals,
+// written in the seal prologue (end_frame has flushed staging; producer is
+// excluded). Relaxed: diagnostic only, never a sync edge.
+std::atomic<uint64_t> g_diagDrawCalls{0};
+std::atomic<uint64_t> g_diagVertBytes{0};
+std::atomic<uint64_t> g_diagUniformBytes{0};
+std::atomic<uint64_t> g_diagTexUploadBytes{0};
+std::atomic<uint64_t> g_diagFramesSealed{0};
+std::atomic<uint32_t> g_diagPsW{0};
+std::atomic<uint32_t> g_diagPsH{0};
 
 using PresentClock = std::chrono::steady_clock;
 
@@ -1351,6 +1361,13 @@ void seal_frame_locked(gfx::SealedFrame& sealedFrame, SealedFrameContext& ctx) {
   // so prepare them while the producer's staging buffers are still mapped.
   gfx::efb_ram::seal_async_downloads();
   gfx::end_frame(ctx.encoder);
+  // Content mirrors for the Android watchdog: do present-source and draw
+  // volume advance, or are we sealing empty frames (guest draws skipped)?
+  g_diagDrawCalls.store(gfx::g_stats.drawCallCount, std::memory_order_relaxed);
+  g_diagVertBytes.store(gfx::g_stats.lastVertSize, std::memory_order_relaxed);
+  g_diagUniformBytes.store(gfx::g_stats.lastUniformSize, std::memory_order_relaxed);
+  g_diagTexUploadBytes.store(gfx::g_stats.lastTextureUploadSize, std::memory_order_relaxed);
+  g_diagFramesSealed.fetch_add(1, std::memory_order_relaxed);
   gfx::g_stats.presentedFrameCount = 0;
   gfx::g_stats.interpolatedFrameCount = 0;
   // Latched before the producer's next gfx::begin_frame() calls
@@ -1367,6 +1384,8 @@ void seal_frame_locked(gfx::SealedFrame& sealedFrame, SealedFrameContext& ctx) {
   // Latched before webgpu::clear_present_source_override() in the producer's
   // next gfx::begin_frame().
   ctx.presentSource = webgpu::current_present_source();
+  g_diagPsW.store(ctx.presentSource.size.width, std::memory_order_relaxed);
+  g_diagPsH.store(ctx.presentSource.size.height, std::memory_order_relaxed);
   // ImGui draw lists are built once per frame and replayed by each slot's ImGui pass, which is why
   // the next ImGui frame cannot start until the encode phase is done.
   imgui::render_frame_data();
@@ -1836,6 +1855,22 @@ void aurora_request_frame_capture(uint32_t frame, const char* outputPath) {
   aurora::g_captureOutputPath = outputPath != nullptr ? outputPath : "frame_capture.bmp";
   aurora::g_captureFrame.store(frame, std::memory_order_release);
 }
+#if defined(__ANDROID__)
+// Diagnostic readback for the Java watchdog frame poller: the latest sealed
+// frame's present-source size (0 = no texture latched), draw volume, and
+// totals. Relaxed: diagnostic only, never a sync edge.
+void aurora_get_sealed_frame_diagnostics(uint64_t* outDraws, uint64_t* outVertBytes,
+                                         uint64_t* outUniformBytes, uint64_t* outTexBytes,
+                                         uint64_t* outSealed, uint32_t* outPsW, uint32_t* outPsH) {
+  if (outDraws) *outDraws = aurora::g_diagDrawCalls.load(std::memory_order_relaxed);
+  if (outVertBytes) *outVertBytes = aurora::g_diagVertBytes.load(std::memory_order_relaxed);
+  if (outUniformBytes) *outUniformBytes = aurora::g_diagUniformBytes.load(std::memory_order_relaxed);
+  if (outTexBytes) *outTexBytes = aurora::g_diagTexUploadBytes.load(std::memory_order_relaxed);
+  if (outSealed) *outSealed = aurora::g_diagFramesSealed.load(std::memory_order_relaxed);
+  if (outPsW) *outPsW = aurora::g_diagPsW.load(std::memory_order_relaxed);
+  if (outPsH) *outPsH = aurora::g_diagPsH.load(std::memory_order_relaxed);
+}
+#endif
 bool aurora_flush_efb_copies_to_ram() {
 #ifdef AURORA_ENABLE_GX
   if (!aurora::gfx::efb_ram::has_pending()) {

@@ -153,6 +153,11 @@ void aurora_set_present_schedule(uint64_t baseNanos, uint64_t intervalNanos);
 // slot group from this, backing off after misses. Only paced presents may report.
 void aurora_report_producer_paced(bool paced);
 void aurora_request_frame_capture(uint32_t frame, const char* outputPath);
+#if defined(__ANDROID__)
+void aurora_get_sealed_frame_diagnostics(uint64_t* outDraws, uint64_t* outVertBytes,
+                                         uint64_t* outUniformBytes, uint64_t* outTexBytes,
+                                         uint64_t* outSealed, uint32_t* outPsW, uint32_t* outPsH);
+#endif
 bool aurora_flush_efb_copies_to_ram();
 bool aurora_flush_efb_copy_to_ram(void* dest);
 

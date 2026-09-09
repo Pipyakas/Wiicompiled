@@ -5,7 +5,10 @@
 #include <SDL3/SDL_main.h>
 
 #include "android_files_dir.h"
+#include "hle_stubs.h"
 #include "recomp_mod_loader.h"
+#include <aurora/aurora.h>
+#include <aurora/gfx.h>
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
@@ -52,6 +55,44 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGuestExecutionAddress(JNIEnv
     // guest thread that owns the thread_local value.
     return static_cast<jint>(
         RecompMod::g_currentTranslatedExecutionAddressAnyThread.load(std::memory_order_relaxed));
+}
+
+// Frame-poller counters for the Java watchdog (see ViState): presented XFB
+// frames vs VI retrace ticks. Equal-and-growing = guest alive but nothing
+// reaching the screen; both frozen = guest thread wedged. The second value
+// is the renderer's own successful-present total: advancing VI presents
+// with a frozen renderer total means Present() never succeeds.
+extern "C" JNIEXPORT jint JNICALL
+Java_org_patchzyy_wiicompiled_GameActivity_nativeGetPresentedFrames(JNIEnv*, jobject) {
+    return static_cast<jint>(VI_HLE_PresentedFrames());
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_org_patchzyy_wiicompiled_GameActivity_nativeGetRetraces(JNIEnv*, jobject) {
+    return static_cast<jint>(VI_HLE_Retraces());
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_org_patchzyy_wiicompiled_GameActivity_nativeGetRendererPresents(JNIEnv*, jobject) {
+    AuroraPresentTiming timing{};
+    aurora_get_present_timing(&timing);
+    return static_cast<jlong>(timing.totalPresentCount);
+}
+
+// Sealed-frame content diagnostics for the Java watchdog (see g_diag* in
+// aurora.cpp): packed as draws|sealed + sizes + present-source WxH. Tells
+// "renderer sealing EMPTY frames" apart from "frames full but black".
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_patchzyy_wiicompiled_GameActivity_nativeGetFrameDiagnostics(JNIEnv* env, jobject) {
+    uint64_t draws = 0, vert = 0, uni = 0, tex = 0, sealed = 0;
+    uint32_t psw = 0, psh = 0;
+    aurora_get_sealed_frame_diagnostics(&draws, &vert, &uni, &tex, &sealed, &psw, &psh);
+    char buf[160];
+    std::snprintf(buf, sizeof(buf), "draws=%llu vert=%llu uni=%llu tex=%llu sealed=%llu ps=%ux%u",
+        (unsigned long long)draws, (unsigned long long)vert,
+        (unsigned long long)uni, (unsigned long long)tex,
+        (unsigned long long)sealed, psw, psh);
+    return env->NewStringUTF(buf);
 }
 
 static uint32_t g_discGameCode = 0;

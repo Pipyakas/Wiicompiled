@@ -18,6 +18,12 @@ void VI_HLE_WaitForNextRetracePoll();
 void VI_HLE_PresentFrame(bool presentedXfb, bool paceToRetrace);
 bool VI_HLE_IsAdvancingRetrace();
 void VI_HLE_SetXfbReady(uint32_t xfbAddr); // Called by GXCopyDisp to signal EFB→XFB copy
+#if defined(__ANDROID__)
+// Snapshot counters for the Java frame poller (see ViState): monotonically
+// increasing guest-progress signals, relaxed/diagnostic-only.
+uint32_t VI_HLE_PresentedFrames() noexcept;
+uint32_t VI_HLE_Retraces() noexcept;
+#endif
 void Audio_HLE_Tick(CpuContext* ctx, uint32_t deltaMicros);
 void Audio_HLE_Poll(CpuContext* ctx);
 // Deferred twin of Audio_HLE_Poll for the long host waits that already service

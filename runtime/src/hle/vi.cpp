@@ -111,6 +111,14 @@ struct ViState {
     std::chrono::microseconds retraceInterval{16666us}; // ~60 Hz
     bool hasValidXfb = false; // True once we've received at least one GXCopyDisp
     uint32_t readyXfb = 0;    // XFB address from the most recent GXCopyDisp
+#if defined(__ANDROID__)
+    // Snapshot counters so a Java-side frame poller can observe guest
+    // progress without reading guest memory: bumped wherever the guest
+    // visibly advances (CopyDisp present, retrace present, retrace tick).
+    // Relaxed: diagnostic only, never a sync edge.
+    std::atomic<uint32_t> presentedFrames{0};
+    std::atomic<uint32_t> retraces{0};
+#endif
 
     // VIConfigure/VISetNextFrameBuffer/VISetBlack only write pending values below; VIFlush arms them but
     // the commit happens at the next retrace, matching real VI hardware. A VIFlush called from a
@@ -619,6 +627,14 @@ void VI_HLE_PresentFrame(bool presentedXfb, bool paceToRetrace) {
         std::lock_guard<std::mutex> lock(g_viMutex);
         g_vi.hasValidXfb = false;
         g_vi.readyXfb = 0;
+#if defined(__ANDROID__)
+        g_vi.presentedFrames.fetch_add(1, std::memory_order_relaxed);
+        // The guest's own frames are reaching the screen: retire the opaque
+        // boot cover so the title screen shows instead of a black overlay.
+        // (Desktop keeps the strap-gated cover: NotifyStrapInputAccepted
+        // fires from controller input there.)
+        settings_overlay::NotifyBootFramesVisible();
+#endif
     }
     // Pre-warm the next frame so subsequent GX work has a valid frame context.
     {
@@ -672,6 +688,15 @@ extern "C" void __VIInit_HLE_801b9294(CpuContext* ctx)
     SeedViStateForInit(ctx, "__VIInit_801b9294");
 }
 PPC_NATIVE_OVERRIDE_VOID(801B9294, __VIInit_HLE_801b9294, (CpuContext* ctx), (ctx));
+
+#if defined(__ANDROID__)
+uint32_t VI_HLE_PresentedFrames() noexcept {
+    return g_vi.presentedFrames.load(std::memory_order_relaxed);
+}
+uint32_t VI_HLE_Retraces() noexcept {
+    return g_vi.retraces.load(std::memory_order_relaxed);
+}
+#endif
 
 // -----------------------------------------------------------------------------
 // Helper stubs referenced by VIInit switch cases (case D variants).
@@ -940,6 +965,9 @@ extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
         preCb = g_vi.preRetraceCallback;
         postCb = g_vi.postRetraceCallback;
         WriteGuestStateLocked();
+#if defined(__ANDROID__)
+        g_vi.retraces.fetch_add(1, std::memory_order_relaxed);
+#endif
     }
     // No-reschedule wake: the strap thread runs on the scheduler fiber
     // itself, so a rescheduling wake parks it via SelectThread with nobody

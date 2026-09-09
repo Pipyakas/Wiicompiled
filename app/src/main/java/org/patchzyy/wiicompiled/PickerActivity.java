@@ -24,6 +24,10 @@ public class PickerActivity extends Activity {
     static boolean hasRom(Activity c) {
         File dir = getRomDir(c);
         if (!dir.isDirectory()) return false;
+        // An extracted DATA tree (files/ + sys/fst.bin, with no single large
+        // image) is a valid boot source; a raw-image probe alone would strand
+        // it on the picker screen forever.
+        if (new File(dir, "sys/fst.bin").isFile() && new File(dir, "files").isDirectory()) return true;
         File[] fs = dir.listFiles();
         if (fs == null) return false;
         for (File f : fs) if (f.isFile() && f.length() > 1024*1024) return true;

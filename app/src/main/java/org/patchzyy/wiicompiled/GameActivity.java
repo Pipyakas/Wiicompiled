@@ -44,14 +44,21 @@ public class GameActivity extends SDLActivity implements SensorEventListener {
     // g_currentTranslatedExecutionAddressAnyThread). 0 = no translated
     // frame has run yet on this process launch.
     private native int nativeGetGuestExecutionAddress();
+    private native int nativeGetPresentedFrames();
+    private native int nativeGetRetraces();
+    private native long nativeGetRendererPresents();
+    private native String nativeGetFrameDiagnostics();
     @Override public boolean onKeyDown(int kc,KeyEvent ev){ if(kc==KeyEvent.KEYCODE_BACK){ try{nativeOnBackPressed();}catch(UnsatisfiedLinkError ignored){} return true;} return super.onKeyDown(kc,ev);}
     private native void nativeOnBackPressed();
     // Logs guest-PC samples while the game runs. The SDL thread owns guest
     // execution; samples stop advancing when it wedges, and the last value
-    // names the stuck translated function for MAP.txt lookup.
+    // names the stuck translated function for MAP.txt lookup. Also samples
+    // the VI presented-frame vs retrace counters: equal-and-growing means
+    // the guest is alive but nothing reaches the screen.
     private void startStallWatchdog() {
         new Thread(() -> {
             int last = 0, same = 0;
+            int lastPres = -1, lastRet = -1, sameCnt = 0;
             for (;;) {
                 try { Thread.sleep(5000); } catch (InterruptedException ignored) { return; }
                 int pc;
@@ -64,7 +71,20 @@ public class GameActivity extends SDLActivity implements SensorEventListener {
                     same = 0;
                 }
                 last = pc;
-                Log.i(TAG,String.format("watchdog: guest PC 0x%08X", pc));
+                int pres = 0, ret = 0;
+                long rpres = 0;
+                try { pres = nativeGetPresentedFrames(); ret = nativeGetRetraces(); rpres = nativeGetRendererPresents(); } catch (Throwable ignored) {}
+                String frameNote = "";
+                if (pres == lastPres && ret == lastRet) {
+                    if (++sameCnt == 6) frameNote = String.format(" FRAMES STUCK (presented=%d retraces=%d rpres=%d, 30s)", pres, ret, rpres);
+                } else {
+                    if (sameCnt >= 6) frameNote = String.format(" frames moving again (presented=%d retraces=%d rpres=%d)", pres, ret, rpres);
+                    sameCnt = 0;
+                }
+                lastPres = pres; lastRet = ret;
+                String diag = "";
+                try { diag = " " + nativeGetFrameDiagnostics(); } catch (Throwable ignored) {}
+                Log.i(TAG,String.format("watchdog: guest PC 0x%08X presented=%d retraces=%d rpres=%d%s%s", pc, pres, ret, rpres, frameNote, diag));
             }
         }, "StallWatchdog").start();
     }

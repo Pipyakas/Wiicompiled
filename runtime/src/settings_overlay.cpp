@@ -920,5 +920,19 @@ void NotifyStrapInputAccepted() noexcept {
     }
 }
 
+#if defined(__ANDROID__)
+void NotifyBootFramesVisible() noexcept {
+    // Same dismissal as strap input, without requiring controller hardware:
+    // once the guest's own frames present, the opaque boot cover has served
+    // its purpose (hiding the uninitialized surface) and must get out of the
+    // way of the title screen.
+    bool expected = false;
+    if (g_strapInputAccepted.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        g_startupDismissFrame.store(g_presentedFrame + kStrapTransitionCoverFrames,
+                                    std::memory_order_release);
+    }
+}
+#endif
+
 void AdvancePresentedFrame() noexcept { ++g_presentedFrame; }
 } // namespace settings_overlay
