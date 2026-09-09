@@ -13,11 +13,12 @@ option(AURORA_ENABLE_CARD "Enable CARD implementation based on kabufuda" ON)
 option(AURORA_CACHE_USE_ZSTD "Compress WebGPU cache entries with zstd" ON)
 
 # Dependency versions
-# AURORA_DAWN_VERSION is the google/dawn upstream tag; encounter/dawn-build
-# publishes prebuilt packages for only a subset of these (currently newest
-# v20260603.191052). Android builds vendor from source so any upstream tag
-# works there, but the desktop "package" path 404s on unpublished tags.
-set(AURORA_DAWN_VERSION "v20260603.191052" CACHE STRING "Dawn version tag (https://github.com/encounter/dawn-build/releases)")
+# Dawn comes from two different upstreams depending on the provider:
+#  - vendor  (Android): google/dawn source tarball (any upstream tag works).
+#  - package (desktop): encounter/dawn-build prebuilt binary, published for
+#    only a subset of tags (currently newest v20260603.191052).
+set(AURORA_DAWN_VENDOR_VERSION "v20260828.215121" CACHE STRING "google/dawn tag for the vendor (source) provider")
+set(AURORA_DAWN_PACKAGE_VERSION "v20260603.191052" CACHE STRING "encounter/dawn-build tag for the package (prebuilt) provider")
 set(AURORA_SDL3_VERSION "3.4.4" CACHE STRING "SDL3 version tag (https://github.com/libsdl-org/SDL/releases)")
 set(AURORA_NOD_VERSION "v2.0.0-alpha.8" CACHE STRING "nod version tag (https://github.com/encounter/nod/releases)")
 set(AURORA_LIBUSB_VERSION "1.0.30" CACHE STRING "libusb version tag (https://github.com/libusb/libusb/releases)")

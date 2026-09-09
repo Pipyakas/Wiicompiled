@@ -13,9 +13,10 @@ android {
         // Dawn builds protobuf from source when cross-compiling and needs a
         // HOST protoc (the Android one can't run on the build machine), and
         // its version must match Dawn's pinned protobuf (see
-        // dawn-src/third_party/protobuf/version.json — 35.x for Dawn
-        // v20260828). Provide one via PROTOC_EXECUTABLE env, else fall back
-        // to a TEMP/protoc-35.1 install (fetch protoc-35.1-win64.zip from
+        // dawn-src/third_party/protobuf/version.json — 35.x for the
+        // AURORA_DAWN_VENDOR_VERSION build). Provide one via
+        // PROTOC_EXECUTABLE env, else fall back to a TEMP/protoc-35.1
+        // install (fetch protoc-35.1-win64.zip from
         // github.com/protocolbuffers/protobuf).
         def hostProtoc = System.getenv("PROTOC_EXECUTABLE") ?: (System.getenv("TEMP") + "/protoc-35.1/bin/protoc.exe")
         externalNativeBuild { cmake { arguments "-DANDROID_PLATFORM=android-30", "-DAURORA_DAWN_PROVIDER=vendor", "-DAURORA_ENABLE_DVD=ON", "-DCMAKE_BUILD_TYPE=Release", "-DPROTOC_EXECUTABLE=${hostProtoc}" } }

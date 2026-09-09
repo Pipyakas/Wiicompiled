@@ -85,10 +85,11 @@ Viewport calculate_present_viewport_for_aspect(uint32_t surface_width, uint32_t 
 void draw_clear(const wgpu::RenderPassEncoder& pass, bool clearColor, bool clearAlpha, bool clearDepth,
                 const Vec4<float>& clearColorValue, float clearDepthValue);
 
-// Blob-cache callback shape follows the Dawn version in use: Dawn >=
-// ~202608xx passes key/value as spans via callback-info structs, older
-// Dawn passes raw pointer+size+userdata function pointers. gpu.cpp wires
-// whichever member the headers provide; the .cpp implements both.
+// Blob-cache callback shape follows the Dawn headers in use: the callback-info
+// API passes key/value as spans, the older function-pointer API passes raw
+// pointer+size+userdata. gpu.cpp wires the side the headers provide (detected
+// via WGPU_DAWN_LOAD_CACHE_DATA_CALLBACK_INFO_INIT); the .cpp implements both
+// over one shared core.
 size_t load_from_cache(std::span<const std::byte> key, std::span<std::byte> value);
 void store_to_cache(std::span<const std::byte> key, std::span<const std::byte> value);
 size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valueSize, void* userdata);

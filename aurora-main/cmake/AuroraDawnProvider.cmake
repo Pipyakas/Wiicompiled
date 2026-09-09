@@ -100,7 +100,7 @@ if (_aurora_dawn_provider STREQUAL "vendor")
 
     include(FetchContent)
     FetchContent_Declare(dawn
-      URL "https://github.com/google/dawn/archive/refs/tags/${AURORA_DAWN_VERSION}.tar.gz"
+      URL "https://github.com/google/dawn/archive/refs/tags/${AURORA_DAWN_VENDOR_VERSION}.tar.gz"
       DOWNLOAD_EXTRACT_TIMESTAMP TRUE
       EXCLUDE_FROM_ALL
     )
@@ -151,12 +151,12 @@ elseif (_aurora_dawn_provider STREQUAL "package")
       endif ()
     endif ()
     set(AURORA_DAWN_PACKAGE_URL
-      "https://github.com/encounter/dawn-build/releases/download/${AURORA_DAWN_VERSION}/dawn-${_dawn_system}-${_dawn_arch}.tar.gz")
+      "https://github.com/encounter/dawn-build/releases/download/${AURORA_DAWN_PACKAGE_VERSION}/dawn-${_dawn_system}-${_dawn_arch}.tar.gz")
 
     # A release asset is mutable: the same tag has already served two different windows-amd64 archives,
     # and a cached extraction is never re-verified. Pin the digest for the combinations we ship.
     if (NOT AURORA_DAWN_PACKAGE_URL_HASH
-        AND AURORA_DAWN_VERSION STREQUAL "v20260603.191052"
+        AND AURORA_DAWN_PACKAGE_VERSION STREQUAL "v20260603.191052"
         AND _dawn_system STREQUAL "windows" AND _dawn_arch STREQUAL "amd64")
       set(AURORA_DAWN_PACKAGE_URL_HASH
         "SHA256=7785373d569b3b0237918ec9c523239f7d0667857c5ea8242e3cdfde95e6aeab")
