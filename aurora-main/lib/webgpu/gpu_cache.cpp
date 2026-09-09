@@ -259,8 +259,13 @@ static bool cache_init() {
   return true;
 }
 
-size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valueSize, void*) {
+size_t load_from_cache(std::span<const std::byte> key, std::span<std::byte> value) {
   std::lock_guard lock(cache_mutex);
+  const uint8_t* keyPtr = reinterpret_cast<const uint8_t*>(key.data());
+  size_t keySize = key.size();
+  uint8_t* valuePtr = value.empty() ? nullptr : reinterpret_cast<uint8_t*>(value.data());
+  size_t valueSize = value.size();
+  void* valueVoid = valuePtr;
 
   if (!cache_init()) {
     return 0;
@@ -272,13 +277,13 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
     return 0;
   }
 
-  // Dawn probes with value == nullptr for the size first, then fetches; count each
+  // Dawn probes with empty span for the size first, then fetches; count each
   // probe as one logical lookup so the hit rate reads per-entry.
-  if (value == nullptr) {
+  if (valueVoid == nullptr) {
     g_lookups.fetch_add(1, std::memory_order_relaxed);
   }
 
-  const auto keyHash = XXH128(key, keySize, 0);
+  const auto keyHash = XXH128(key.data(), key.size(), 0);
   check(sqlite3_bind_blob(load_stmt, 1, &keyHash, sizeof(keyHash), SQLITE_TRANSIENT));
 
   const auto ret = sqlite3_step(load_stmt);
@@ -288,7 +293,7 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
     const auto foundPtr = sqlite3_column_blob(load_stmt, 0);
     foundSize = sqlite3_column_int64(load_stmt, 1);
     const bool compressed = sqlite3_column_int(load_stmt, 2) != 0;
-    if (value == nullptr) {
+    if (valueVoid == nullptr) {
       g_hits.fetch_add(1, std::memory_order_relaxed);
     } else {
       g_hitBytes.fetch_add(static_cast<uint64_t>(foundSize), std::memory_order_relaxed);
@@ -297,11 +302,11 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
       g_pendingTouches.push_back(keyHash);
     }
 
-    if (value && valueSize == foundSize) {
+    if (valueVoid != nullptr && valueSize == foundSize) {
       if (compressed) {
 #if defined(AURORA_CACHE_USE_ZSTD)
         const auto compSize = sqlite3_column_bytes(load_stmt, 0);
-        const auto zstdRet = ZSTD_decompress(value, valueSize, foundPtr, compSize);
+        const auto zstdRet = ZSTD_decompress(valueVoid, valueSize, foundPtr, compSize);
         if (ZSTD_isError(zstdRet)) {
           Log.error("zstd decompression error: {}", ZSTD_getErrorName(zstdRet));
           foundSize = 0;
@@ -318,7 +323,7 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
           Log.error("Cache entry is missing raw value data");
           foundSize = 0;
         } else if (foundSize != 0) {
-          std::memcpy(value, foundPtr, foundSize);
+          std::memcpy(valueVoid, foundPtr, foundSize);
         }
       }
     }
@@ -335,8 +340,12 @@ size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valu
   return foundSize;
 }
 
-void store_to_cache(void const* key, size_t keySize, void const* value, size_t valueSize, void*) {
+void store_to_cache(std::span<const std::byte> key, std::span<const std::byte> value) {
   std::lock_guard lock(cache_mutex);
+  const uint8_t* keyPtr = reinterpret_cast<const uint8_t*>(key.data());
+  size_t keySize = key.size();
+  const uint8_t* valuePtr = reinterpret_cast<const uint8_t*>(value.data());
+  size_t valueSize = value.size();
 
   if (!cache_init()) {
     return;
@@ -348,7 +357,7 @@ void store_to_cache(void const* key, size_t keySize, void const* value, size_t v
     return;
   }
 
-  const void* storedValue = value;
+  const void* storedValue = valuePtr;
   sqlite3_uint64 storedValueSize = valueSize;
   int compressed = 0;
 #if defined(AURORA_CACHE_USE_ZSTD)
@@ -362,7 +371,7 @@ void store_to_cache(void const* key, size_t keySize, void const* value, size_t v
     compress_buffer.resize(bound);
   }
 
-  const auto compressRet = ZSTD_compress(compress_buffer.data(), compress_buffer.size(), value, valueSize, 0);
+  const auto compressRet = ZSTD_compress(compress_buffer.data(), compress_buffer.size(), valuePtr, valueSize, 0);
   if (ZSTD_isError(compressRet)) {
     Log.error("ZSTD compression error: {}", ZSTD_getErrorName(compressRet));
     return;
@@ -375,7 +384,7 @@ void store_to_cache(void const* key, size_t keySize, void const* value, size_t v
   }
 #endif
 
-  const auto keyHash = XXH128(key, keySize, 0);
+  const auto keyHash = XXH128(key.data(), key.size(), 0);
   check(sqlite3_bind_blob64(store_stmt, 1, &keyHash, sizeof(keyHash), SQLITE_TRANSIENT));
   check(
       sqlite3_bind_blob64(store_stmt, 2, storedValue, storedValueSize, compressed ? SQLITE_STATIC : SQLITE_TRANSIENT));

@@ -157,7 +157,8 @@ extern "C" int32_t NANDOpen_HLE(uint32_t pathPtr, uint32_t fileInfoPtr, uint32_t
             file = NandFopen(hostPath, fopenMode);
         }
         if (!file) {
-            LogNandError("NANDOpen", "FAILED to open");
+            LogNandError("NANDOpen", "FAILED to open '%s' (guest='%s', mode=%u)",
+                         HostPathText(hostPath).c_str(), path, mode);
             return NAND_RESULT_NOEXISTS;
         }
     }

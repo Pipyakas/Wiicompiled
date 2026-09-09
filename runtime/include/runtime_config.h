@@ -159,7 +159,14 @@ inline bool IsSupportedFrameInterpolationFps(uint32_t value) {
 }
 
 inline std::optional<std::filesystem::path> ExecutableDirectory() {
-#ifdef _WIN32
+#if defined(__ANDROID__)
+    // A .so has no meaningful executable dir; the Java side pushes the
+    // app-private files dir before SDL_main runs.
+    if (const char* filesDir = std::getenv("WIICOMPILED_FILES_DIR"); filesDir && *filesDir) {
+        return std::filesystem::path(filesDir);
+    }
+    return std::nullopt;
+#elif defined(_WIN32)
     std::wstring buffer(MAX_PATH, L'\0');
     for (;;) {
         const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
@@ -219,6 +226,14 @@ inline const std::optional<std::filesystem::path>& PortableRootDirectory() {
 }
 
 inline std::filesystem::path ApplicationDataDirectory() {
+#if defined(__ANDROID__)
+    // Pushed from GameActivity.nativeSetFilesDir before SDL_main runs. The
+    // generic XDG/HOME branches below resolve to a read-only root ("/WiiCompiled")
+    // on Android, so the app-private files dir must win.
+    if (const char* filesDir = std::getenv("WIICOMPILED_FILES_DIR"); filesDir && *filesDir) {
+        return std::filesystem::path(filesDir);
+    }
+#endif
     if (const auto& portableRoot = PortableRootDirectory()) {
         return *portableRoot / kPortableUserDataDirectoryName;
     }

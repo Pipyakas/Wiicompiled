@@ -395,6 +395,47 @@ bool aurora_dvd_open(const char* disc_path) {
   return true;
 }
 
+bool aurora_dvd_get_raw_fst(const uint8_t** out_data, size_t* out_size) {
+  if (out_data) *out_data = nullptr;
+  if (out_size) *out_size = 0;
+  if (s_partition == nullptr) return false;
+  NodPartitionMeta meta{};
+  if (nod_partition_meta(s_partition, &meta) != NOD_RESULT_OK) return false;
+  if (meta.raw_fst.data == nullptr || meta.raw_fst.size == 0) return false;
+  if (out_data) *out_data = static_cast<const uint8_t*>(meta.raw_fst.data);
+  if (out_size) *out_size = meta.raw_fst.size;
+  return true;
+}
+
+uint32_t aurora_dvd_get_game_code(void) {
+  if (s_diskID.gameName[0] == '\0') return 0;
+  return (uint32_t(uint8_t(s_diskID.gameName[0])) << 24) |
+         (uint32_t(uint8_t(s_diskID.gameName[1])) << 16) |
+         (uint32_t(uint8_t(s_diskID.gameName[2])) << 8) |
+         uint32_t(uint8_t(s_diskID.gameName[3]));
+}
+
+int32_t aurora_dvd_read_partition(void* out, uint32_t length, uint64_t offset) {
+  if (s_partition == nullptr || (length != 0 && out == nullptr) ||
+      offset > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) ||
+      length > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+    return DVD_RESULT_FATAL_ERROR;
+  }
+  if (nod_seek(s_partition, static_cast<int64_t>(offset), 0) < 0) {
+    return DVD_RESULT_FATAL_ERROR;
+  }
+  auto* writePtr = static_cast<uint8_t*>(out);
+  uint32_t totalRead = 0;
+  while (totalRead < length) {
+    const int64_t read = nod_read(s_partition, writePtr + totalRead, length - totalRead);
+    if (read <= 0) {
+      return DVD_RESULT_FATAL_ERROR;
+    }
+    totalRead += static_cast<uint32_t>(read);
+  }
+  return static_cast<int32_t>(totalRead);
+}
+
 void aurora_dvd_close(void) { clearState(); }
 
 void DVDInit(void) {}

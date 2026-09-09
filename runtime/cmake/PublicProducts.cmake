@@ -196,6 +196,9 @@ function(mkw_configure_product target)
 
     target_link_libraries(${target} PRIVATE
         aurora::gx aurora::pad aurora::si aurora::vi aurora::mtx)
+    if(ANDROID AND TARGET aurora::dvd)
+        target_link_libraries(${target} PRIVATE aurora::dvd)
+    endif()
     if(EXISTS "${MKW_AURORA_DIR}/cmake/AuroraCopyRuntimeDLLs.cmake")
         include("${MKW_AURORA_DIR}/cmake/AuroraCopyRuntimeDLLs.cmake")
         aurora_copy_runtime_dlls(${target})
@@ -277,6 +280,7 @@ function(mkw_configure_product target)
         "$<TARGET_FILE_DIR:${target}>/initial_pipeline_cache.db")
 endfunction()
 
+if(NOT ANDROID)
 add_executable(WiiCompiled "${MKW_BASE_PRODUCT_SOURCE}" ${MKW_BASE_REGISTRATION_SOURCES})
 mkw_configure_product(WiiCompiled)
 target_precompile_headers(WiiCompiled PRIVATE
@@ -301,6 +305,23 @@ else()
     add_custom_target(mkw_release DEPENDS WiiCompiled)
     message(STATUS "RetroRewind target disabled (run translate-mod and emit-build-shards)")
 endif()
+else()
+    add_custom_target(mkw_release DEPENDS wiicompiled)
+endif()
+
+if(ANDROID)
+    set(MKW_ANDROID_MAIN_SOURCE "${MKW_RUNTIME_SOURCE_DIR}/src/android_main.cpp")
+    if(EXISTS "${MKW_ANDROID_MAIN_SOURCE}")
+        add_library(wiicompiled SHARED "${MKW_ANDROID_MAIN_SOURCE}" "${MKW_BASE_PRODUCT_SOURCE}" ${MKW_BASE_REGISTRATION_SOURCES})
+        mkw_configure_product(wiicompiled)
+        # No PCH on this target: the static deps' PCH was built for
+        # executables (-fPIE) and NDK clang rejects reusing it in a SHARED
+        # lib (-fPIC) with an "is pie differs" AST error.
+        if(TARGET mkw_base_sensitive)
+            target_sources(wiicompiled PRIVATE $<TARGET_OBJECTS:mkw_base_sensitive>)
+        endif()
+    endif()
+endif()
 
 # x86-64-v3 (SSE3/SSSE3/SSE4.1/FMA/AVX2/BMI2) is the baseline runtime/src/host_cpu_baseline.cpp
 # guards against - a fixed, portable floor since an x86_64 build may run on a different machine
@@ -309,7 +330,13 @@ endif()
 # wraps it, always build from source on the target), so -mcpu=native is safe and strictly better -
 # real per-core tuning (scheduling, whatever NEON/atomic extensions that exact CPU actually has)
 # instead of the generic armv8-a baseline Clang would otherwise assume.
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
+if(ANDROID)
+    if(CMAKE_ANDROID_ARCH_ABI STREQUAL "x86_64")
+        set(MKW_BASELINE_ARCH_FLAG -march=x86-64-v3)
+    else()
+        set(MKW_BASELINE_ARCH_FLAG "")
+    endif()
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(AMD64|amd64|x86_64|X86_64)$")
     set(MKW_BASELINE_ARCH_FLAG -march=x86-64-v3)
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
     set(MKW_BASELINE_ARCH_FLAG -mcpu=native)

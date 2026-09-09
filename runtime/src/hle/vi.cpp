@@ -34,9 +34,14 @@
 
 // Forward declaration for OSWakeupThread - used to wake threads on VI retrace queue
 extern "C" void OSWakeupThread_HLE_801aaaa4(CpuContext* ctx);
+void OS_HLE_WakeupThreadNoReschedule(CpuContext* ctx, uint32_t waitQueue);
+void Audio_HLE_PollDeferred();
+void OS_HLE_ProcessAlarmsDeferred(int);
+extern "C" void OS_HLE_ProcessAlarms(int);
 
 // Forward declaration for OSSleepThread - used by VIWaitForRetrace HLE
 extern "C" void OSSleepThread_HLE_801aa9b8(CpuContext* cpu);
+extern bool NandProcessPendingCallbacks(CpuContext* cpu, int maxToProcess);
 extern "C" int g_gxFrameCount;
 extern "C" int32_t OS__DisableInterrupts_801a65ac();
 extern "C" int32_t OS__RestoreInterrupts_801a65d4(int32_t level);
@@ -318,9 +323,13 @@ void AdvanceRetrace(CpuContext* ctx, Clock::time_point retraceStamp, bool servic
 
     // Wake up threads sleeping on the VI retrace queue (VIWaitForRetrace).
     // The retrace count has been incremented and written to guest memory.
+    // Save/restore gpr[3]: callers (VIWaitForRetrace's awaited-value path)
+    // use r3/r28 as live guest state across this call.
     if (ctx) {
+        const uint32_t savedR3 = ctx->gpr[3];
         ctx->gpr[3] = kViRetraceQueueAddr;
         OSWakeupThread_HLE_801aaaa4(ctx);
+        ctx->gpr[3] = savedR3;
     }
 
     if (serviceAurora) {
@@ -355,7 +364,13 @@ void AdvanceRetrace(CpuContext* ctx, Clock::time_point retraceStamp, bool servic
     // pixels go black" behavior. When not black, submission waits for hasXfbReady (GXCopyDisp done).
     if (serviceAurora && !s_presentSequenceActive.load(std::memory_order_acquire)) {
         const bool frameActive = g_auroraFrameActive.load(std::memory_order_acquire);
-        const bool xfbMatches = (readyXfb != 0 && readyXfb == currentFb);
+        // Strap boot path: the guest's first VIFlush commits nextFrameBuffer
+        // AFTER CopyDisp set readyXfb, so currentFb (committed this retrace
+        // from the stale pending value) lags one frame behind. A same-address
+        // XFB is the same buffer regardless of commit timing — present it.
+        const bool xfbMatches = (readyXfb != 0 &&
+            (readyXfb == currentFb || currentFb == 0 ||
+             g_vi.nextFrameBuffer == readyXfb));
         const bool shouldPresentXfb = hasXfbReady && !isBlack && xfbMatches;
         const bool shouldPresentBlack = isBlack && frameActive;
         const bool shouldSubmit = frameActive && (shouldPresentXfb || shouldPresentBlack);
@@ -890,46 +905,51 @@ PPC_NATIVE_OVERRIDE_VOID(801BAC48, VIGetCurrentLine_HLE_801bac48, (CpuContext* c
 extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
 {
     CpuContext* cpu = ctx ? ctx : &GetPersistentCpuContext();
-    
-    if (Fiber::GuestFiberManager::IsInitialized()) {
-        const int32_t irqState = OS__DisableInterrupts_801a65ac();
-        uint32_t retraceCount = 0;
-        {
-            std::lock_guard<std::mutex> lock(g_viMutex);
-            EnsureInitializedLocked();
-            retraceCount = g_vi.retraceCount;
-        }
-
-        do {
-            cpu->gpr[3] = kViRetraceQueueAddr;
-            OSSleepThread_HLE_801aa9b8(cpu);
-
-            {
-                std::lock_guard<std::mutex> lock(g_viMutex);
-                EnsureInitializedLocked();
-                if (g_vi.retraceCount != retraceCount) {
-                    break;
-                }
-            }
-        } while (true);
-
-        OS__RestoreInterrupts_801a65d4(irqState);
-    } else {
-        std::chrono::microseconds interval{16666us};
-        Clock::time_point target;
-        {
-            std::lock_guard<std::mutex> lock(g_viMutex);
-            EnsureInitializedLocked();
-            interval = g_vi.retraceInterval;
-            target = g_vi.lastRetrace + interval;
-        }
-
-        const auto now = Clock::now();
-        if (now < target) {
-            SleepPreciselyUntil(target, true);
-        }
-        AdvanceRetrace(cpu, target, true);
+    {
+        std::lock_guard<std::mutex> lock(g_viMutex);
+        EnsureInitializedLocked();
     }
+    // One boundary per call; no OSSleepThread. AdvanceRetrace would bump a
+    // second time, so bump + wake + callbacks inline.
+    const uint32_t savedR3 = cpu->gpr[3];
+    const uint32_t savedR28 = cpu->gpr[28];
+    uint32_t preCb = 0, postCb = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_viMutex);
+        EnsureInitializedLocked();
+        g_vi.retraceCount += 1;
+        g_vi.fieldOdd = !g_vi.fieldOdd;
+        g_vi.lastRetrace = Clock::now();
+        preCb = g_vi.preRetraceCallback;
+        postCb = g_vi.postRetraceCallback;
+        WriteGuestStateLocked();
+    }
+    // No-reschedule wake: the strap thread runs on the scheduler fiber
+    // itself, so a rescheduling wake parks it via SelectThread with nobody
+    // to resume it. Threads still go READY; the scheduler picks them up at
+    // the next safe point.
+    OS_HLE_WakeupThreadNoReschedule(cpu, kViRetraceQueueAddr);
+    if (preCb) InvokeIndirectCpu(preCb, cpu);
+    if (postCb) {
+        uint32_t sys = 0;
+        try { sys = Memory::Read32(kEggSSystemAddr); } catch (...) {}
+        if (sys != 0) InvokeIndirectCpu(postCb, cpu);
+    }
+    cpu->gpr[3] = savedR3;
+    cpu->gpr[28] = savedR28;
+    // Pump deferred completions on the VI boundary: the DVD/IOS/NAND layers
+    // queue translated completion callbacks that only run from a pump. The
+    // strap thread never sleeps (no fiber), so without this the queued
+    // cover-wait completions would never dispatch. Alarms first: the
+    // Inquiry completion arms a periodic ReadDiskID re-issue via
+    // OSSetPeriodicAlarm. Use the non-deferred pump: the deferred one is
+    // gated on guest interrupts, which the cover-wait thread holds disabled,
+    // so the alarm would never fire.
+    OS_HLE_ProcessAlarms(8);
+    Audio_HLE_PollDeferred();
+    NandProcessPendingCallbacks(cpu, 64);
+    cpu->gpr[3] = savedR3;
+    cpu->gpr[28] = savedR28;
     ViSetR3(cpu, 0);
 }
 PPC_NATIVE_OVERRIDE_VOID(801B99EC, VIWaitForRetrace_HLE_801b99ec, (CpuContext* ctx), (ctx));

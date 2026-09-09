@@ -6,7 +6,9 @@
 #include "wgpu.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 
 struct SDL_Window;
 
@@ -83,8 +85,8 @@ Viewport calculate_present_viewport_for_aspect(uint32_t surface_width, uint32_t 
 void draw_clear(const wgpu::RenderPassEncoder& pass, bool clearColor, bool clearAlpha, bool clearDepth,
                 const Vec4<float>& clearColorValue, float clearDepthValue);
 
-size_t load_from_cache(void const* key, size_t keySize, void* value, size_t valueSize, void* userdata);
-void store_to_cache(void const* key, size_t keySize, void const* value, size_t valueSize, void* userdata);
+size_t load_from_cache(std::span<const std::byte> key, std::span<std::byte> value);
+void store_to_cache(std::span<const std::byte> key, std::span<const std::byte> value);
 void cache_shutdown();
 
 struct BlobCacheStats {

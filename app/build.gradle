@@ -8,8 +8,10 @@ android {
         targetSdk 35
         versionCode 4
         versionName "0.3.1-beryllium-vendor2"
-        ndk { abiFilters "arm64-v8a" }
-        externalNativeBuild { cmake { arguments "-DANDROID_PLATFORM=android-30", "-DAURORA_DAWN_PROVIDER=vendor", "-DCMAKE_BUILD_TYPE=Release" } }
+        ndkVersion "27.1.12297006"
+        ndk { abiFilters "arm64-v8a", "x86_64" }
+        def protocExe = System.getenv("TEMP") + "/protoc-35.1/bin/protoc.exe"
+        externalNativeBuild { cmake { arguments "-DANDROID_PLATFORM=android-30", "-DAURORA_DAWN_PROVIDER=vendor", "-DAURORA_ENABLE_DVD=ON", "-DCMAKE_BUILD_TYPE=Release", "-DPROTOC_EXECUTABLE=${protocExe}" } }
     }
     signingConfigs {
         release {
@@ -19,15 +21,15 @@ android {
             keyPassword "beryllium"
         }
     }
-    buildTypes { release { signingConfig signingConfigs.release; minifyEnabled false } }
-    externalNativeBuild { cmake { path file("../runtime/CMakeLists.txt"); version "4.1.2" } }
+    buildTypes { debug { debuggable true; jniDebuggable true; minifyEnabled false; signingConfig signingConfigs.release; packaging { jniLibs { keepDebugSymbols.add("**/*.so") } } }; release { signingConfig signingConfigs.release; minifyEnabled false } }
+    externalNativeBuild { cmake { path file("../runtime/CMakeLists.txt"); version "4.3.2" } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     sourceSets { named("main") { assets.srcDirs("src/main/assets") } }
 }
 tasks.register("copyGameAssets", Copy) {
-    from("../../runtime/assets/wii") { into("wii_bootstrap") }
-    from("../../runtime/assets/dsp/dsp_coef.bin")
-    from("../../runtime/assets/pipeline/initial_pipeline_cache.db")
+    from("../runtime/assets/wii") { into("wii_bootstrap") }
+    from("../runtime/assets/dsp/dsp_coef.bin")
+    from("../runtime/assets/pipeline/initial_pipeline_cache.db")
     into("src/main/assets/game")
 }
 tasks.named("preBuild") { dependsOn("copyGameAssets") }

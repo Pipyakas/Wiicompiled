@@ -824,8 +824,9 @@ void RuntimeAuroraLogCallback(AuroraLogLevel level, const char* module,
                               const char* message, unsigned int len) {
     const std::string_view moduleView = module != nullptr ? std::string_view(module) : std::string_view{};
     const std::string_view messageView = message != nullptr ? std::string_view(message, len) : std::string_view{};
-    std::cerr << "[aurora] [" << static_cast<int>(level) << "] [" << moduleView << "] "
-              << messageView << std::endl;
+    RT_LOGF(RT_TAG_RUNTIME, "[aurora] [%d] [%.*s] %.*s\n", static_cast<int>(level),
+            (int)moduleView.size(), moduleView.data(),
+            (int)messageView.size(), messageView.data());
     if (level == LOG_FATAL) {
         ShowRuntimeFatalPopup("Aurora reported a fatal renderer error", messageView);
     }

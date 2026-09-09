@@ -694,7 +694,9 @@ public:
     template <typename T>
     static std::remove_reference_t<T> LoadArgument(CpuContext* cpu, size_t& gprIndex, size_t& fprIndex) {
         using CleanT = std::remove_reference_t<T>;
-        if constexpr (std::is_floating_point_v<CleanT>) {
+        if constexpr (std::is_same_v<CleanT, CpuContext*>) {
+            return cpu;
+        } else if constexpr (std::is_floating_point_v<CleanT>) {
             if (fprIndex >= 13) {
                 throw std::out_of_range("FPR argument overflow");
             }

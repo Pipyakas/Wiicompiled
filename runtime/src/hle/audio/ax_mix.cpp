@@ -32,6 +32,8 @@ namespace AxDspHle {
 namespace {
 
 std::filesystem::path FindDspCoefficientRom() {
+    // On Android ExecutableDirectory() is the app-private files dir where
+    // AssetExtractor stages dsp_coef.bin on first launch.
     if (const auto executableDirectory = RuntimeConfigFile::ExecutableDirectory()) {
         const auto adjacent = *executableDirectory / "dsp_coef.bin";
         if (std::filesystem::is_regular_file(adjacent)) {

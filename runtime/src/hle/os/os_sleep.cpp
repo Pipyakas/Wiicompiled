@@ -378,7 +378,7 @@ extern "C" void OSSleepThread_HLE_801aa9b8(CpuContext* ctx)
 {
     CpuContext* cpu = ctx ? ctx : &GetPersistentCpuContext();
     const uint32_t queuePtr = cpu->gpr[3];
-    
+
     if (queuePtr == 0) {
         RT_LOG(RT_TAG_OS) << "OSSleepThread: null queue pointer!" << std::endl;
         return;
@@ -439,7 +439,7 @@ extern "C" void OSSleepThread_HLE_801aa9b8(CpuContext* ctx)
 
         // Set reschedule flag and switch threads
         ::Memory::Write32(kSchedulerReschedCounterAddr, 1);
-        
+
         // Match the original SDK behavior: sleep yields via SelectThread(0).
         cpu->gpr[3] = 0;
         SelectThread_801a9c08(cpu);

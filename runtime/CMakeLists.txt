@@ -97,6 +97,9 @@ if(NOT MKW_NATIVE_PREBUILT_DIR)
     target_compile_features(mkw_cryptopp PUBLIC cxx_std_17)
     target_compile_definitions(mkw_cryptopp PUBLIC ${MKW_CRYPTOPP_INTERFACE_DEFINITIONS})
     target_compile_options(mkw_cryptopp PRIVATE -w)
+    if(ANDROID)
+        target_include_directories(mkw_cryptopp PRIVATE "${ANDROID_NDK}/sources/android/cpufeatures")
+    endif()
     set_target_properties(mkw_cryptopp PROPERTIES UNITY_BUILD OFF)
 endif()
 
@@ -235,7 +238,7 @@ set(MKW_RETRO_REWIND_PRODUCT_SOURCE "${CMAKE_CURRENT_LIST_DIR}/src/product/retro
 # mkw_runtime_common. See cmake/PublicProducts.cmake and the file's own header.
 set(MKW_CPU_BASELINE_SOURCE "${CMAKE_CURRENT_LIST_DIR}/src/host_cpu_baseline.cpp")
 list(REMOVE_ITEM SOURCES ${MKW_BASE_PRODUCT_SOURCE} ${MKW_RETRO_REWIND_PRODUCT_SOURCE}
-     ${MKW_CPU_BASELINE_SOURCE})
+     ${MKW_CPU_BASELINE_SOURCE} "${CMAKE_CURRENT_LIST_DIR}/src/android_main.cpp")
 
 # The translator emits the complete, content-addressed source graph. Consuming
 # this one manifest keeps configure independent of the 28k generated function

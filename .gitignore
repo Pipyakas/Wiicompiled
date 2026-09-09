@@ -71,27 +71,17 @@ output.txt
 
 # Android / Beryllium
 /.gradle/
-gradle/
-gradlew
-gradlew.bat
-beryllium.jks
-/app/build/
-/app/.cxx/
 local.properties
 *.jks
 *.keystore
-/Capture/
-/.externalNativeBuild/
-# Android / Beryllium
-/.gradle/
-gradle/
-gradlew
-gradlew.bat
 beryllium.jks
 /app/build/
 /app/.cxx/
-local.properties
-*.jks
-*.keystore
 /Capture/
 /.externalNativeBuild/
+# USA retranslation scratch + dumps (large, regenerable, copyrighted)
+/Assets-USA/
+/generated-usa/
+/projects/mkwii-usa/
+# copyGameAssets output (copied from runtime/assets at build time)
+/app/src/main/assets/game/

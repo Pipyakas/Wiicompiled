@@ -60,6 +60,9 @@ struct ISFSFileStats {
 static constexpr int32_t ISFS_DEV_FD = 1;
 static constexpr int32_t ES_DEV_FD = 3;
 static constexpr int32_t DOLPHIN_DEV_FD = 4;
+// Stable FD for /dev/di (DVD drive interface); ioctl 149 (Inquiry) is the
+// one the DVD state machine needs.
+static constexpr int32_t DI_DEV_FD = 5;
 static constexpr uint32_t ES_IOCTL_GETDEVICEID = 0x07;
 static constexpr uint32_t ES_IOCTL_GETDEVICECERT = 0x1E;
 static constexpr uint32_t ES_IOCTL_GETTITLEID = 0x20;
@@ -385,6 +388,13 @@ extern "C" int32_t NAND_IOS_Open_HLE(uint32_t pathPtr, uint32_t mode) {
         if (std::strcmp(path, "/dev/dolphin") == 0) {
             return DOLPHIN_DEV_FD;
         }
+        // The DVD state machine issues IOS ioctl 149 on /dev/di (drive
+        // interface). Dolphin answers Inquiry/cover ioctls here; return a
+        // stable fd and answer in NAND_IOS_Ioctl_HLE instead of ENOENT, or
+        // the guest's stateReady loop never completes.
+        if (std::strcmp(path, "/dev/di") == 0) {
+            return DI_DEV_FD;
+        }
         LogNandWarning("IOS_Open", "unknown device '%s' mode=%u", path, mode);
         return ISFS_ENOENT;
     }
@@ -440,6 +450,9 @@ extern "C" int32_t NAND_IOS_Close_HLE(uint32_t fd) {
         return ISFS_OK;
     }
     if (fd == DOLPHIN_DEV_FD) {
+        return ISFS_OK;
+    }
+    if (fd == DI_DEV_FD) {
         return ISFS_OK;
     }
     if (GetShaHandle(static_cast<int32_t>(fd))) {
@@ -566,6 +579,23 @@ extern "C" int32_t NAND_IOS_Ioctl_HLE(
     if (fd == DOLPHIN_DEV_FD) {
         LogNandWarning("IOS_Ioctl", "/dev/dolphin does not support scalar ioctl cmd=%u", cmd);
         return ISFS_EINVAL;
+    }
+    // /dev/di answers the DVD drive ioctls the translated state machine
+    // issues (notably 149 = Inquiry). Cover closed, drive ready, no error.
+    // Layout mirrors Dolphin's DVDInterface: out[0..1] = drive state/cover.
+    if (fd == DI_DEV_FD) {
+        if (outBufPtr && outLen >= 8) {
+            // The status read (IOS_Ioctl cmd122) is SYNCHRONOUS: our 0 lands
+            // in outBuf[0] before the issuer reads it at loc_80166710, and
+            // (0 + 0x1150000) != 0xDAED takes the error/OSReport path.
+            // Answer the hardware status word whose low 16 bits are 0xDAED:
+            // (0xFEEBDAED + 0x1150000) truncates to 0xDAED, passing the gate
+            // into the async Inquiry issue at loc_80166754.
+            Memory::Write32(outBufPtr + 0, 0xFEEBDAEDu);
+            Memory::Write32(outBufPtr + 4, 0); // cover closed
+            return ISFS_OK;
+        }
+        return ISFS_OK;
     }
     
     // Handle /dev/fs ISFS commands
@@ -1036,6 +1066,24 @@ extern "C" int32_t NAND_IOS_Ioctlv_HLE(
 
     if (fd == DOLPHIN_DEV_FD) {
         return HandleDolphinIoctlv(cmd, numIn, numOut, vectorPtr);
+    }
+
+    // /dev/di answers the DVD drive ioctls the translated state machine
+    // issues via IOS_Ioctlv (notably Inquiry cmd 18 through 0x801640B4).
+    // Cover closed, drive ready, no error.
+    if (fd == DI_DEV_FD) {
+        if (!vectorPtr ||
+            !Memory::Contains(vectorPtr, static_cast<size_t>(numIn + numOut) * 8u)) {
+            return ISFS_EINVAL;
+        }
+        for (uint32_t i = numIn; i < numIn + numOut; ++i) {
+            const IosVector out = ReadIosVector(vectorPtr, i);
+            if (out.address != 0 && out.size != 0 && Memory::Contains(out.address, out.size)) {
+                uint8_t* dst = Memory::GetPointer(out.address, out.size);
+                std::memset(dst, 0, out.size);
+            }
+        }
+        return ISFS_OK;
     }
 
     if (fd == ISFS_DEV_FD) {

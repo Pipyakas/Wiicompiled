@@ -348,10 +348,11 @@ const AuroraEvent* poll_events() {
   // Clear out the previous scroll values to prevent ghost input
   input::set_mouse_scroll(0, 0);
   if (is_paused()) {
-    if (SDL_WaitEvent(&event)) {
+    // Bounded wait: a real pause (backgrounded, surface lost) must not park
+    // the guest producer thread forever — the caller's retry deadline (e.g.
+    // BeginNextAuroraFrameWithRetry) can never expire inside SDL_WaitEvent.
+    if (SDL_WaitEventTimeout(&event, 10)) {
       process_event(event);
-    } else {
-      Log.warn("SDL_WaitEvent failed: {}", SDL_GetError());
     }
   }
   while (SDL_PollEvent(&event)) {

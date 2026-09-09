@@ -5,6 +5,39 @@
 
 #include <cstdio>
 #include <iostream>
+#include <sstream>
+#include <string>
+
+#if defined(__ANDROID__)
+#include <android/log.h>
+
+// Line-buffered log helper: std::cerr is unbuffered (unitbuf), so each `<<`
+// would otherwise flush as its own logcat line. The temporary lives until the
+// end of the full `RT_LOG(...) << ... << std::endl;` statement, then logs the
+// complete line in its destructor.
+struct AndroidLogLine {
+    std::ostringstream oss;
+    ~AndroidLogLine() {
+        std::string s = oss.str();
+        while (!s.empty() && (s.back() == '\n' || s.back() == '\r')) s.pop_back();
+        size_t start = 0;
+        bool any = false;
+        while (start < s.size()) {
+            size_t end = s.find('\n', start);
+            std::string line = s.substr(start, end == std::string::npos ? end : end - start);
+            if (!line.empty()) {
+                __android_log_write(ANDROID_LOG_INFO, "WiiCompiled", line.c_str());
+                any = true;
+            }
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+        if (!any) return;
+        std::fprintf(stderr, "%s\n", s.c_str());
+    }
+    std::ostringstream& stream() { return oss; }
+};
+#endif
 
 #include "memory.h"
 
@@ -26,11 +59,19 @@
 #define RT_TAG_VI "vi"
 
 // Stream form:  RT_LOG(RT_TAG_OS) << "OSCreateThread failed" << std::endl;
+#if defined(__ANDROID__)
+#define RT_LOG(tag) (AndroidLogLine().stream() << "[" tag "] ")
+#else
 #define RT_LOG(tag) (std::cerr << "[" tag "] ")
+#endif
 
 // printf form:  RT_LOGF(RT_TAG_GX, "invalid GXTexObj @0x%08X\n", addr);
 // `tag` and the format string must both be literals; they are concatenated.
+#if defined(__ANDROID__)
+#define RT_LOGF(tag, ...) do { __android_log_print(ANDROID_LOG_INFO, "WiiCompiled", "[" tag "] " __VA_ARGS__); std::fprintf(stderr, "[" tag "] " __VA_ARGS__); } while (0)
+#else
 #define RT_LOGF(tag, ...) std::fprintf(stderr, "[" tag "] " __VA_ARGS__)
+#endif
 
 // Shared epilogue for the `catch (const Memory::AccessViolation& e)` handlers
 // spread across the HLE. `who` is the guest function or operation that faulted;

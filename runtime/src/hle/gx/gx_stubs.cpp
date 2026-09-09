@@ -27,17 +27,33 @@ extern "C" void GX__SetDrawSync_8016ed08(uint32_t token) {
 extern "C" void GX__SetDrawSync_8016e9fc(uint32_t token) { GX__SetDrawSync_8016ed08(token); }
 PPC_NATIVE_OVERRIDE_VOID(8016e9fc, GX__SetDrawSync_8016e9fc, (uint32_t token), (token));
 
+extern "C" void GX__FinishInterruptHandler_8016ed94();
+extern "C" void OSWakeupThread_HLE_801aaaa4(CpuContext* ctx);
 extern "C" void GX__FinishInterruptHandler_8016ed94() {
     try {
         uint32_t gd = Memory::Read32(kGXDataPtrAddr);
         if (gd) Memory::Write16(gd + 0x0Au, static_cast<uint16_t>(Memory::Read16(gd + 0x0Au) | 0x0008u));
         Memory::Write8(kGxDrawDoneFlagAddr, 1);
     } catch (...) {}
+    // The hardware finish interrupt wakes the PE-finish thread queue that
+    // GXWaitDrawDone sleeps on (0x803867D0). The flag alone never unparks
+    // the waiter, so the strap display path wedges at 0x801AA9B8.
+    try {
+        auto& cpu = GetPersistentCpuContext();
+        const uint32_t savedR3 = cpu.gpr[3];
+        cpu.gpr[3] = 0x803867D0u;
+        OSWakeupThread_HLE_801aaaa4(&cpu);
+        cpu.gpr[3] = savedR3;
+    } catch (...) {}
 }
 PPC_NATIVE_OVERRIDE_VOID(8016ed94, GX__FinishInterruptHandler_8016ed94, (), ());
 
 extern "C" void GX__DrawDone_8016eab0() {
     try { Memory::Write8(kGxDrawDoneFlagAddr, 0); } catch (...) {}
+    // Synchronous drain + finish on the calling thread: the PE interrupt
+    // this emulates would only fire after the queued work actually retired,
+    // and the handler now wakes 0x803867D0, so a waiter parked there gets
+    // woken here instead of wedging.
     GXDrawDone(); GX__FinishInterruptHandler_8016ed94();
 }
 PPC_NATIVE_OVERRIDE_VOID(8016eab0, GX__DrawDone_8016eab0, (), ());

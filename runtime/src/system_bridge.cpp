@@ -1,6 +1,8 @@
 #include "system_bridge.h"
 
 #include <cctype>
+#include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -17,6 +19,9 @@
 #endif
 
 
+#if defined(__ANDROID__)
+extern "C" uint32_t Android_GetDiscGameCode(void);
+#endif
 #include "abi_bridge.h"
 #include "memory.h"
 #include "ppc_runtime.h"
@@ -508,10 +513,24 @@ void SystemBridge::SeedLowMemDefaults(const Memory::Config& config) {
     // Retro Rewind reads the region byte directly from here while building its
     // Retro-WFC payload URL, and OSGetAppGamename reads the app code mirrors
     // at 0x80003180/0x80003194 while building NAS auth fields.
-    entries.push_back({0x80000000u, 0x524D4350u, "Disc game code"}); // RMCP
-    entries.push_back({0x80000004u, 0x30310100u, "Disc maker/id"});  // 01 + disc 1
-    entries.push_back({0x80003180u, 0x524D4350u, "OS app game code"}); // RMCP
-    entries.push_back({0x80003194u, 0x524D4350u, "OS app gamename"});  // RMCP
+    // On Android the user may provide any region (RMCP/RMCE/RMCJ/etc.) in
+    // compressed formats (RVZ/WIA/WBFS/CISO) — reflect the actual disc header,
+    // not a hardcoded PAL RMCP01, so NTSC-U/J/K boot and online match region.
+    uint32_t discCode = 0x524D4350u; // "RMCP" fallback (desktop / no disc yet)
+    uint32_t discMaker = 0x30310100u; // "01" + disc 1
+#if defined(__ANDROID__)
+    // SeedLowMem runs before the nod image opens, so the NOD header is not
+    // available yet. android_main probes the ROM header at SDL_main; use the
+    // cached value (fallback stays RMCP until dvd.cpp publishes the real code
+    // to lowmem, which then stays authoritative for the session).
+    if (uint32_t stagedCode = Android_GetDiscGameCode(); stagedCode != 0) {
+        discCode = stagedCode;
+    }
+#endif
+    entries.push_back({0x80000000u, discCode, "Disc game code"});
+    entries.push_back({0x80000004u, discMaker, "Disc maker/id"});
+    entries.push_back({0x80003180u, discCode, "OS app game code"});
+    entries.push_back({0x80003194u, discCode, "OS app gamename"});
     if (RuntimeProduct::IsRetroRewind()) {
         entries.push_back({0x800017D8u, 0x00000001u, "Retro Rewind recomp runtime marker", true});
     }

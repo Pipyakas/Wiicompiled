@@ -57,6 +57,8 @@ inline std::filesystem::path ManagedNandRootPath() {
 }
 
 inline std::optional<std::filesystem::path> BootstrapPayloadPath() {
+    // On Android ExecutableDirectory() returns the app-private files dir where
+    // AssetExtractor stages wii_bootstrap/ on first launch.
     if (auto executableDirectory = RuntimeConfigFile::ExecutableDirectory()) {
         const auto adjacent = *executableDirectory / "wii_bootstrap";
         if (ExistingDirectory(adjacent / "shared2" / "wc24")) {
@@ -97,7 +99,10 @@ inline bool CopyBootstrapFile(const std::filesystem::path& sourceRoot,
     return !ec;
 }
 
-// Create these WC24 files only for a new profile; never overwrite user data.
+// WC24 payload AssetExtractor stages into the managed NAND on first run.
+// (SYSCONF/setting.txt stay absent by design: sc.cpp answers SC* queries from
+// config instead of console-owned files. See "managed NAND intentionally
+// starts without a console-owned setting.txt".)
 constexpr std::string_view kBootstrapFiles[] = {
     "shared2/wc24/misc.bin",
     "shared2/wc24/nwc24dl.bin",

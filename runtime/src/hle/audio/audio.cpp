@@ -508,8 +508,8 @@ int64_t ConsumeAudioPollDeltaMicros()
     // Cap the catch-up interval after a debugger pause or host stall; backlog drains via
     // kMaxBlocksPerTick per pass. Never return early on a zero delta: two scheduler passes
     // can land in the same microsecond and the backlog still needs servicing.
-    constexpr int64_t kMaxPollDeltaMicros = 100'000;
-    return std::min(elapsed, kMaxPollDeltaMicros);
+    constexpr auto kMaxPollDeltaMicros = int64_t{100'000};
+    return std::min(elapsed, static_cast<decltype(elapsed)>(kMaxPollDeltaMicros));
 }
 
 } // namespace

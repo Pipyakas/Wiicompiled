@@ -660,12 +660,9 @@ bool initialize(AuroraBackend auroraBackend) {
           "not safe on this device.");
     }
 #ifdef WEBGPU_DAWN
-    wgpu::DawnCacheDeviceDescriptor cacheDescriptor({
-        .isolationKey = nullptr,
-        .loadDataFunction = load_from_cache,
-        .storeDataFunction = store_to_cache,
-        .functionUserdata = nullptr,
-    });
+    wgpu::DawnCacheDeviceDescriptor cacheDescriptor;
+    cacheDescriptor.SetDawnLoadCacheDataCallback(load_from_cache);
+    cacheDescriptor.SetDawnStoreCacheDataCallback(store_to_cache);
 
     std::vector<const char*> enableToggles{
     /* clang-format off */
