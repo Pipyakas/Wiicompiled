@@ -1866,7 +1866,8 @@ void aurora_request_frame_capture(uint32_t frame, const char* outputPath) {
 void aurora_get_sealed_frame_diagnostics(uint64_t* outDraws, uint64_t* outVertBytes,
                                          uint64_t* outUniformBytes, uint64_t* outTexBytes,
                                          uint64_t* outSealed, uint32_t* outPsW, uint32_t* outPsH,
-                                         uint32_t* outPsIsXfb) {
+                                         uint32_t* outPsIsXfb, uint64_t* outSealedDraws,
+                                         uint64_t* outSealedCmds, uint64_t* outSealedPasses) {
   if (outDraws) *outDraws = aurora::g_diagDrawCalls.load(std::memory_order_relaxed);
   if (outVertBytes) *outVertBytes = aurora::g_diagVertBytes.load(std::memory_order_relaxed);
   if (outUniformBytes) *outUniformBytes = aurora::g_diagUniformBytes.load(std::memory_order_relaxed);
@@ -1875,6 +1876,12 @@ void aurora_get_sealed_frame_diagnostics(uint64_t* outDraws, uint64_t* outVertBy
   if (outPsW) *outPsW = aurora::g_diagPsW.load(std::memory_order_relaxed);
   if (outPsH) *outPsH = aurora::g_diagPsH.load(std::memory_order_relaxed);
   if (outPsIsXfb) *outPsIsXfb = aurora::g_diagPsIsXfb.load(std::memory_order_relaxed);
+  if (outSealedDraws)
+    *outSealedDraws = aurora::gfx::g_sealedFrameDrawCommands.load(std::memory_order_relaxed);
+  if (outSealedCmds)
+    *outSealedCmds = aurora::gfx::g_sealedFrameCommands.load(std::memory_order_relaxed);
+  if (outSealedPasses)
+    *outSealedPasses = aurora::gfx::g_sealedFramePasses.load(std::memory_order_relaxed);
 }
 #endif
 bool aurora_flush_efb_copies_to_ram() {

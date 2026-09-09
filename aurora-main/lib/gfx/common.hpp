@@ -309,6 +309,14 @@ private:
 // Detach the recorded passes of the frame that just ended into `out`. Must be
 // called with the renderer GPU mutex held; see SealedFrame.
 void seal_frame(SealedFrame& out) noexcept;
+#if defined(__ANDROID__)
+// Sealed-frame workload mirrors for the Java watchdog frame poller: Draw
+// commands vs total commands vs pass count of the last sealed frame.
+// Relaxed: diagnostic only, never a sync edge.
+extern std::atomic<uint64_t> g_sealedFrameDrawCommands;
+extern std::atomic<uint64_t> g_sealedFrameCommands;
+extern std::atomic<uint64_t> g_sealedFramePasses;
+#endif
 
 // Encode a sealed frame. Never touches the producer-visible recording state,
 // so this may run concurrently with the producer's FIFO drains.

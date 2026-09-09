@@ -147,6 +147,13 @@ wgpu::BindGroup g_uniformBindGroup;
 AuroraStats g_stats{};
 uint32_t g_drawCallCount = 0;
 uint32_t g_mergedDrawCallCount = 0;
+#if defined(__ANDROID__)
+// Sealed-frame workload mirrors (see seal_frame): Draw commands vs all
+// commands vs pass count of the frame just handed to the encode phase.
+std::atomic<uint64_t> g_sealedFrameDrawCommands{0};
+std::atomic<uint64_t> g_sealedFrameCommands{0};
+std::atomic<uint64_t> g_sealedFramePasses{0};
+#endif
 
 using CommandList = std::vector<Command>;
 struct RenderPass {
@@ -439,6 +446,11 @@ gx::DrawData* get_last_draw_command() {
 }
 
 static void push_draw_command(ShaderDrawCommand data) {
+  if (!has_current_render_pass())
+    UNLIKELY {
+      Log.warn("Dropping draw command without an active render pass");
+      return;
+    }
   push_command(CommandType::Draw, Command::Data{.draw = data});
   ++g_drawCallCount;
 }
@@ -580,7 +592,11 @@ void resolve_pass(TextureHandle texture, ClipRect rect, bool clearColor, bool cl
       clampBottom ? uniformSourceRect.y() + uniformSourceRect.w() : srcH;
   const float clampTopUv = (clampTopPixels + 0.5f) / srcH;
   const float clampBottomUv = (clampBottomPixels - 0.5f) / srcH;
-  // Push UV transform uniform for tex_copy_conv (crop region in UV space)
+  // Push UV transform uniform for tex_copy_conv (crop region in UV space).
+  // This uniform is the tell that a display-copy resolve actually ran on the
+  // sealed frame: it lands in the staging buffer before the new render pass
+  // is pushed, so a sealed uniform total of exactly MaxUniformSize (the
+  // unconditional end-of-frame pad) means no resolve_pass touched the frame.
   const std::array resolveUniform{
       uniformSourceRect.x() / srcW,
       uniformSourceRect.y() / srcH,
@@ -1351,6 +1367,30 @@ void seal_frame(SealedFrame& out) noexcept {
   recycle_render_passes(passes);
   passes.swap(g_renderPasses);
   g_currentRenderPass = UINT32_MAX;
+#if defined(__ANDROID__)
+  // Diagnostic for the Java watchdog frame poller: the sealed pass workload.
+  // 0 draws + an empty uniform tail (exactly the end-of-frame pad) proves the
+  // sealed frame carried nothing — neither guest draws nor the display-copy
+  // resolve — so the per-seal `draws/vert/uni/ps` diagnostics can tell an
+  // empty seal from a full-but-black one.
+  {
+    uint64_t drawCommands = 0;
+    for (const auto& sealedPass : passes) {
+      for (const auto& sealedCmd : sealedPass.commands) {
+        if (sealedCmd.type == CommandType::Draw) {
+          ++drawCommands;
+        }
+      }
+    }
+    g_sealedFrameDrawCommands.store(drawCommands, std::memory_order_relaxed);
+    uint64_t commandTotal = 0;
+    for (const auto& sealedPass : passes) {
+      commandTotal += sealedPass.commands.size();
+    }
+    g_sealedFrameCommands.store(commandTotal, std::memory_order_relaxed);
+    g_sealedFramePasses.store(passes.size(), std::memory_order_relaxed);
+  }
+#endif
 }
 
 void render(SealedFrame& frame, wgpu::CommandEncoder& cmd, int32_t interpolatedFrame, bool finalize) {
