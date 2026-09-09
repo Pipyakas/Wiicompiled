@@ -385,10 +385,20 @@ void AdvanceRetrace(CpuContext* ctx, Clock::time_point retraceStamp, bool servic
             // Outside startup, VI black remains a pure black presentation.
             // Unpaced: this present already runs in retrace context.
             VI_HLE_PresentFrame(shouldPresentXfb, false);
-        } else if (g_auroraFrameHadWork.load(std::memory_order_acquire) && !shouldPresentXfb && !isBlack) {
-            // GX work is in progress but frame not complete - just poll window events
-            // Don't call aurora_end_frame() as that would present incomplete work
+        } else if (!isBlack && g_auroraFrameHadWork.load(std::memory_order_acquire)) {
+            // GX work recorded this period but no XFB is ready yet (CopyDisp
+            // hasn't run or its address doesn't match the committed buffer).
+            // Boot and transition frames stall here forever without this:
+            // keep the frame open for the copy that completes it instead of
+            // wedging with an active-but-never-submitted Aurora frame.
+            // shouldPresentXfb is deliberately NOT part of the gate: when it
+            // is true shouldSubmit above already handled the present.
             UpdateAuroraAndProcessEvents();
+            if (!g_auroraFrameActive.load(std::memory_order_acquire)) {
+                if (BeginAuroraFrame()) {
+                    g_auroraFrameActive.store(true, std::memory_order_release);
+                }
+            }
         }
     }
 

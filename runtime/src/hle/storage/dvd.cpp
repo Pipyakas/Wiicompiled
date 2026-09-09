@@ -108,8 +108,12 @@ static std::vector<PublishedExtent> g_publishedExtents;
 static bool g_dvdInitialized = false;
 #if defined(__ANDROID__)
 static bool g_dvdUseNod = false;
-// Disc offset words -> nod FST index, for routing reads into the image.
+// Disc offset words -> nod FST index (raw-FST walk), for routing reads into
+// the image.
 static std::map<uint32_t,int32_t> g_nodOffsetToEntry;
+// Normalized dvd path -> nod FST index (fallback enum walk, which has no raw
+// FST to derive disc offsets from).
+static std::map<std::string,int32_t> g_nodPathToEntry;
 #endif
 static std::vector<FstFileEntry> g_fstFiles;
 static bool g_fstLoaded = false;
@@ -952,7 +956,18 @@ extern "C" void DVDInit_8015EA1C()
     Memory::Write16(diskHeader + 0x04, 0x3031);     // '01' (Maker)
     Memory::Write8(diskHeader + 0x06, 0x01);        // Disk #1
 #if defined(__ANDROID__)
-    if (TryOpenCompressedDisc()) {
+    // An extracted DATA tree (files/ + sys/fst.bin) always wins over a
+    // compressed image: its host files are the ground truth and need no nod
+    // translation. Only fall through to nod when no image file exists.
+    {
+        std::error_code probeEc;
+        fs::path romDir;
+        if (auto exe = RuntimeConfigFile::ExecutableDirectory(); exe && !exe->empty()) {
+            romDir = *exe / "rom";
+        }
+        if (!romDir.empty() && IsDvdDataRoot(romDir)) {
+            RT_LOG(RT_TAG_DVD) << "using extracted DATA tree; skipping nod" << std::endl;
+        } else if (TryOpenCompressedDisc()) {
         bool usedRawFst = false;
         {
             // Same walk as LoadFstIndex above, over the nod image's raw FST
@@ -972,6 +987,7 @@ extern "C" void DVDInit_8015EA1C()
                         g_fstFiles.clear();
                         g_fstFiles.reserve(entryCount / 2);
                         g_nodOffsetToEntry.clear();
+                        g_nodPathToEntry.clear();
                         for (uint32_t i = 1; i < entryCount; ++i) {
                             while (!stack.empty() && i >= stack.back().endIndex) {
                                 stack.pop_back();
@@ -1035,6 +1051,9 @@ extern "C" void DVDInit_8015EA1C()
                             DVDFileInfo fi{};
                             if (DVDFastOpen(static_cast<s32>(e.entryNum), &fi)) {
                                 RegisterFileEntry(child, fs::path(), fi.length);
+                                // The fallback walk has no raw FST, so record the
+                                // nod index by path for the read path below.
+                                g_nodPathToEntry[NormalizePath(child)] = static_cast<int32_t>(e.entryNum);
                                 DVDClose(&fi);
                             }
                         }
@@ -1063,7 +1082,8 @@ extern "C" void DVDInit_8015EA1C()
         g_dvdInitialized = true;
         initializing = false;
         return;
-    }
+        } // end else-if (TryOpenCompressedDisc)
+    } // end extracted-DATA probe scope
 #endif
     // 4. Scan Files
     const fs::path& rootPath = GetDvdRoot();
@@ -1144,24 +1164,56 @@ extern "C" int32_t DVDReadPrio_8015E834(uint32_t fileInfoPtr, uint32_t bufferPtr
             return DvdReadFatal(fileInfoPtr, "<nod DVD read>", offset, uLength,
                                 "DVD read destination is outside guest memory");
         }
-        // Reads from a compressed image go through the nod FST entry when the
-        // handle resolves, else by absolute disc offset — mirroring the
-        // desktop path's extent resolution, with the disc image in place of
-        // host files. The nod read fills the guest buffer in place, like a
-        // completed DMA, so there is no staging copy. Short reads clamp like
-        // the desktop path (uLength clamped to entry.size - uOffset above):
-        // callers size some reads from the FST length, which can exceed the
-        // bytes nod yields at that offset.
+        // Reads from a compressed image resolve through the published runtime
+        // FST exactly like the desktop path (start word -> byte offset ->
+        // extent -> nod FST index), with the disc image in place of host
+        // files. The nod read fills the guest buffer in place, like a
+        // completed DMA, so there is no staging copy. uLength clamps to the
+        // entry like the desktop path: callers size some reads from the FST
+        // length, which can exceed the bytes nod yields at that offset.
+        // NOTE: a nod file handle is positioned at the file's own byte 0
+        // (nod_partition_open_file returns a per-file handle), so the read
+        // offset is the file-relative offset. Do NOT add the disc bias back:
+        // the extent lookup only identifies the file; the in-file position is
+        // (startWords*4 - extentStart) + uOffset, i.e. the offset inside the
+        // file the guest handle already points into.
+        const uint64_t startBytes = static_cast<uint64_t>(startWords) * 4ull;
+        const PublishedExtent* nodExtent = FindPublishedExtentForByteOffset(startBytes);
+        if (!nodExtent) {
+            return DvdReadFatal(fileInfoPtr, "<nod DVD read>", offset, uLength,
+                                "DVD file info does not reference a published FST extent");
+        }
+        const DVDFileEntry& nodEntry = g_fileEntries[nodExtent->entryIndex];
+        const uint64_t nodBias = startBytes - nodExtent->startBytes;
+        const uint64_t nodFileOffset = nodBias + uOffset;
+        if (nodFileOffset >= nodEntry.size) {
+            return DvdReadFatal(fileInfoPtr, "<nod DVD read>", offset, uLength,
+                                "read offset is outside the indexed DVD file");
+        }
+        uint32_t nodLength = uLength;
+        if (uint64_t avail = nodEntry.size - static_cast<uint32_t>(nodFileOffset);
+            nodLength > avail) {
+            nodLength = static_cast<uint32_t>(avail);
+        }
+        // Open the nod entry by its FST index. The raw-FST walk records
+        // disc-start-words -> index in g_nodOffsetToEntry; the fallback enum
+        // walk (no raw FST) records path -> index in g_nodPathToEntry.
         int32_t bytesRead = -1;
-        if (auto it = g_nodOffsetToEntry.find(startWords); it != g_nodOffsetToEntry.end()) {
+        int32_t nodIndex = -1;
+        if (auto it = g_nodOffsetToEntry.find(nodEntry.discOffsetWords);
+            it != g_nodOffsetToEntry.end()) {
+            nodIndex = it->second;
+        } else if (auto jt = g_nodPathToEntry.find(NormalizePath(nodEntry.dvdPath));
+                   jt != g_nodPathToEntry.end()) {
+            nodIndex = jt->second;
+        }
+        if (nodIndex >= 0) {
             DVDFileInfo tmp{};
-            if (DVDFastOpen(it->second, &tmp)) {
-                bytesRead = DVDReadPrio(&tmp, dst, length, offset, prio);
+            if (DVDFastOpen(nodIndex, &tmp)) {
+                bytesRead = DVDReadPrio(&tmp, dst, static_cast<int32_t>(nodLength),
+                                        static_cast<int32_t>(nodFileOffset), prio);
                 DVDClose(&tmp);
             }
-        } else {
-            const uint64_t absOff = uint64_t(startWords) * 4ull + uOffset;
-            bytesRead = aurora_dvd_read_partition(dst, uLength, absOff);
         }
         if (bytesRead < 0) {
             return DvdReadFatal(fileInfoPtr, "<nod DVD read>", offset, uLength,
