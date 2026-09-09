@@ -27,9 +27,9 @@ extern "C" void GX__SetDrawSync_8016ed08(uint32_t token) {
 extern "C" void GX__SetDrawSync_8016e9fc(uint32_t token) { GX__SetDrawSync_8016ed08(token); }
 PPC_NATIVE_OVERRIDE_VOID(8016e9fc, GX__SetDrawSync_8016e9fc, (uint32_t token), (token));
 
-extern "C" void GX__FinishInterruptHandler_8016ed94();
-extern "C" void OSWakeupThread_HLE_801aaaa4(CpuContext* ctx);
-extern "C" void GX__FinishInterruptHandler_8016ed94() {
+extern "C" void GX__FinishInterruptHandler_8016ed94(CpuContext* ctx);
+void OS_HLE_WakeupThreadNoReschedule(CpuContext* ctx, uint32_t waitQueue);
+extern "C" void GX__FinishInterruptHandler_8016ed94(CpuContext* ctx) {
     try {
         uint32_t gd = Memory::Read32(kGXDataPtrAddr);
         if (gd) Memory::Write16(gd + 0x0Au, static_cast<uint16_t>(Memory::Read16(gd + 0x0Au) | 0x0008u));
@@ -37,25 +37,25 @@ extern "C" void GX__FinishInterruptHandler_8016ed94() {
     } catch (...) {}
     // The SDK's PE-finish waiter parks on the thread queue at 0x803867D0
     // (see __GX__PEInit_8016ee14). The flag alone never unparks it, so wake
-    // the queue the way the hardware interrupt would.
+    // the queue the way the hardware interrupt would. No-reschedule: this
+    // handler runs inside GX__DrawDone on the waiter's own thread — a
+    // rescheduling wake would re-park the thread it is trying to release.
+    // (Same shape as AdvanceRetrace's retrace-queue wake.)
     try {
-        auto& cpu = GetPersistentCpuContext();
-        const uint32_t savedR3 = cpu.gpr[3];
-        cpu.gpr[3] = 0x803867D0u;
-        OSWakeupThread_HLE_801aaaa4(&cpu);
-        cpu.gpr[3] = savedR3;
+        CpuContext* cpu = ctx ? ctx : &GetPersistentCpuContext();
+        OS_HLE_WakeupThreadNoReschedule(cpu, 0x803867D0u);
     } catch (...) {}
 }
-PPC_NATIVE_OVERRIDE_VOID(8016ed94, GX__FinishInterruptHandler_8016ed94, (), ());
+PPC_NATIVE_OVERRIDE_VOID(8016ed94, GX__FinishInterruptHandler_8016ed94, (CpuContext* ctx), (ctx));
 
-extern "C" void GX__DrawDone_8016eab0() {
+extern "C" void GX__DrawDone_8016eab0(CpuContext* ctx) {
     try { Memory::Write8(kGxDrawDoneFlagAddr, 0); } catch (...) {}
     // GXDrawDone is the synchronous drain; the finish handler then delivers
     // the completion (flag + PE-finish queue wake) on the calling thread,
     // the way the hardware interrupt would after the queued work retired.
-    GXDrawDone(); GX__FinishInterruptHandler_8016ed94();
+    GXDrawDone(); GX__FinishInterruptHandler_8016ed94(ctx);
 }
-PPC_NATIVE_OVERRIDE_VOID(8016eab0, GX__DrawDone_8016eab0, (), ());
+PPC_NATIVE_OVERRIDE_VOID(8016eab0, GX__DrawDone_8016eab0, (CpuContext* ctx), (ctx));
 
 extern "C" void GX__PixModeSync_8016eb70() {
     try { uint32_t gd = Memory::Read32(kGXDataPtrAddr); if (gd) Memory::Write16(gd + 2, 0); } catch (...) {}

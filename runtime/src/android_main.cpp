@@ -48,7 +48,10 @@ extern "C" float Android_GetGyroRoll() { return g_gyroRoll; }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGuestExecutionAddress(JNIEnv*, jobject) {
-    return static_cast<jint>(RecompMod::CurrentTranslatedExecutionAddress());
+    // Any-thread mirror: this JNI call runs on a Binder/GL thread, not the
+    // guest thread that owns the thread_local value.
+    return static_cast<jint>(
+        RecompMod::g_currentTranslatedExecutionAddressAnyThread.load(std::memory_order_relaxed));
 }
 
 static uint32_t g_discGameCode = 0;

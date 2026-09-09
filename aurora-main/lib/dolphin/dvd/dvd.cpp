@@ -424,12 +424,18 @@ int32_t aurora_dvd_read_partition(void* out, uint32_t length, uint64_t offset) {
   if (nod_seek(s_partition, static_cast<int64_t>(offset), 0) < 0) {
     return DVD_RESULT_FATAL_ERROR;
   }
+  // Mirror readFromHandle above (and the desktop HLE clamp): nod_read returns
+  // 0 at end-of-partition, which is a short read, not an error. Callers size
+  // some reads from the FST length, which can exceed the available bytes.
   auto* writePtr = static_cast<uint8_t*>(out);
   uint32_t totalRead = 0;
   while (totalRead < length) {
     const int64_t read = nod_read(s_partition, writePtr + totalRead, length - totalRead);
-    if (read <= 0) {
+    if (read < 0) {
       return DVD_RESULT_FATAL_ERROR;
+    }
+    if (read == 0) {
+      break;
     }
     totalRead += static_cast<uint32_t>(read);
   }

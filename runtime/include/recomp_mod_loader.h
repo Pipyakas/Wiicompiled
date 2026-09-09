@@ -25,6 +25,10 @@ struct MemoryReservation {
 // in the .cpp: every indirect dispatch scopes this, so an out-of-line ctor/dtor would cost two
 // un-inlinable calls plus a register spill each for three instructions of work.
 inline thread_local uint32_t g_currentTranslatedExecutionAddress = 0;
+// Cross-thread mirror of the above, updated at the same points. Lets a stall
+// watchdog thread observe the guest PC (thread_local is unreadable from
+// another thread). Relaxed ordering: diagnostic only, never a sync edge.
+inline std::atomic<uint32_t> g_currentTranslatedExecutionAddressAnyThread{0};
 
 class ScopedTranslatedExecutionAddress {
 public:
@@ -34,11 +38,13 @@ public:
         // stays visible, and the unconditional restore below keeps nesting exact.
         if (address != 0) {
             g_currentTranslatedExecutionAddress = address;
+            g_currentTranslatedExecutionAddressAnyThread.store(address, std::memory_order_relaxed);
         }
     }
 
     ~ScopedTranslatedExecutionAddress() noexcept {
         g_currentTranslatedExecutionAddress = previous_;
+        g_currentTranslatedExecutionAddressAnyThread.store(previous_, std::memory_order_relaxed);
     }
 
     ScopedTranslatedExecutionAddress(const ScopedTranslatedExecutionAddress&) = delete;

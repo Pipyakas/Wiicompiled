@@ -1149,8 +1149,9 @@ extern "C" int32_t DVDReadPrio_8015E834(uint32_t fileInfoPtr, uint32_t bufferPtr
         // desktop path's extent resolution, with the disc image in place of
         // host files. The nod read fills the guest buffer in place, like a
         // completed DMA, so there is no staging copy. Short reads clamp like
-        // the desktop path instead of failing: callers size some reads from
-        // the FST length, which can exceed the bytes nod yields.
+        // the desktop path (uLength clamped to entry.size - uOffset above):
+        // callers size some reads from the FST length, which can exceed the
+        // bytes nod yields at that offset.
         int32_t bytesRead = -1;
         if (auto it = g_nodOffsetToEntry.find(startWords); it != g_nodOffsetToEntry.end()) {
             DVDFileInfo tmp{};
@@ -1162,7 +1163,7 @@ extern "C" int32_t DVDReadPrio_8015E834(uint32_t fileInfoPtr, uint32_t bufferPtr
             const uint64_t absOff = uint64_t(startWords) * 4ull + uOffset;
             bytesRead = aurora_dvd_read_partition(dst, uLength, absOff);
         }
-        if (bytesRead < 0 || static_cast<uint32_t>(bytesRead) > uLength) {
+        if (bytesRead < 0) {
             return DvdReadFatal(fileInfoPtr, "<nod DVD read>", offset, uLength,
                                 "compressed disc read failed");
         }
@@ -1279,18 +1280,21 @@ extern "C" int32_t DVD__ReadAbsAsyncPrio_HLE_801628cc(uint32_t cmdBlockPtr,
         } else {
             void* dst = requestedLength ? Memory::GetPointer(bufferPtr, requestedLength) : nullptr;
             const int32_t nodRead = aurora_dvd_read_partition(dst, requestedLength, absoluteOffset);
-            if (nodRead == static_cast<int32_t>(requestedLength)) {
-                bytesRead = nodRead;
-                if (requestedLength) GxNotifyGuestRamDmaWrite(bufferPtr, requestedLength);
-                try {
-                    Memory::Write32(cmdBlockPtr + DVD_CB_OFFSET_STATE, DVD_STATE_END);
-                    Memory::Write32(cmdBlockPtr + DVD_CB_OFFSET_TRANSFERRED, requestedLength);
-                } catch (const Memory::AccessViolation&) {
-                }
-            } else {
+            if (nodRead < 0) {
                 bytesRead = DvdReadFatal(cmdBlockPtr, "<unmapped DVD offset>", absoluteOffset,
                                          requestedLength,
                                          "compressed disc read failed");
+            } else {
+                // Short reads clamp (see DVDReadPrio nod path): the absolute
+                // offset may sit near end-of-partition.
+                const uint32_t transferred = static_cast<uint32_t>(nodRead);
+                bytesRead = nodRead;
+                if (transferred) GxNotifyGuestRamDmaWrite(bufferPtr, transferred);
+                try {
+                    Memory::Write32(cmdBlockPtr + DVD_CB_OFFSET_STATE, DVD_STATE_END);
+                    Memory::Write32(cmdBlockPtr + DVD_CB_OFFSET_TRANSFERRED, transferred);
+                } catch (const Memory::AccessViolation&) {
+                }
             }
         }
         InvokeDvdCallback(callbackPtr, bytesRead, cmdBlockPtr);
@@ -1394,6 +1398,7 @@ static void TraceDvdLowCommandOnce(const char* who, uint32_t cmdBlockPtr, uint32
 
 extern "C" int32_t DVDLowInquiry_80165A30(uint32_t cmdBlockPtr, uint32_t callback)
 {
+    TraceDvdLowCommandOnce("DVDLowInquiry", cmdBlockPtr, callback);
 #if defined(__ANDROID__)
     if (g_dvdUseNod) {
         // The translated DVD::InquiryAsync state machine copies the drive info
@@ -1529,8 +1534,12 @@ extern "C" int32_t DVDLowRead_80166330(uint32_t buffer, uint32_t length, uint32_
         }
         void* dst = length ? Memory::GetPointer(buffer, length) : nullptr;
         const int32_t bytesRead = aurora_dvd_read_partition(dst, length, offset);
-        const bool ok = bytesRead == static_cast<int32_t>(length);
-        if (ok) GxNotifyGuestRamDmaWrite(buffer, length);
+        // Short reads clamp (see DVDReadPrio nod path): the offset may sit
+        // near end-of-partition. Only a negative return is a failure.
+        const bool ok = bytesRead >= 0;
+        if (ok && bytesRead) {
+            GxNotifyGuestRamDmaWrite(buffer, static_cast<uint32_t>(bytesRead));
+        }
         if (callback) InvokeDvdLowCallback(callback, ok ? kDiTransferComplete : 0u);
         CompleteDvdCancelState();
         return ok;
