@@ -434,12 +434,12 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
         u32 sink = 0;
 
         if (cmd == GX_NOP_CMD || opcode == GX_CMD_INVL_VC_CMD) {
-            if (!consumeBytes(1, sink)) break;
+            if (!consumeBytes(1, sink)) { g_diagFifoStallNop.fetch_add(1, std::memory_order_relaxed); break; }
             continue;
         }
 
         if (cmd == GX_LOAD_BP_REG_CMD) {
-            if (g_hleGxState.fifoByteCount < 5) break;
+            if (g_hleGxState.fifoByteCount < 5) { g_diagFifoStallBp.fetch_add(1, std::memory_order_relaxed); break; }
             const uint32_t bpWord = ReadBE32(data + 1);
             GXApplyBPReg(static_cast<uint8_t>(bpWord >> 24), bpWord & 0x00FFFFFFu);
             if (!consumeBytes(5, sink)) break;
@@ -447,7 +447,7 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
         }
 
         if (opcode == GX_LOAD_CP_REG_CMD) {
-            if (g_hleGxState.fifoByteCount < 6) break;
+            if (g_hleGxState.fifoByteCount < 6) { g_diagFifoStallCp.fetch_add(1, std::memory_order_relaxed); break; }
             const uint8_t reg = data[1];
             const uint32_t cpValue = ReadBE32(data + 2);
             GxCpDecode::ApplyCpRegWrite(reg, cpValue);
@@ -456,10 +456,10 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
         }
 
         if (opcode == GX_LOAD_XF_REG_CMD) {
-            if (g_hleGxState.fifoByteCount < 5) break;
+            if (g_hleGxState.fifoByteCount < 5) { g_diagFifoStallXf.fetch_add(1, std::memory_order_relaxed); break; }
             const uint16_t countWords = ReadBE16(data + 1);
             const uint32_t packetBytes = 1u + 4u + (static_cast<uint32_t>(countWords) + 1u) * 4u;
-            if (g_hleGxState.fifoByteCount < packetBytes) break;
+            if (g_hleGxState.fifoByteCount < packetBytes) { g_diagFifoStallXf.fetch_add(1, std::memory_order_relaxed); break; }
             GXCallDisplayList(data, packetBytes);
             GXMarkFrameWork();
             if (!consumeBytes(packetBytes, sink)) break;
@@ -467,7 +467,7 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
         }
 
         if (opcode >= GX_LOAD_INDX_A_CMD && opcode <= GX_LOAD_INDX_D_CMD) {
-            if (g_hleGxState.fifoByteCount < 5) break;
+            if (g_hleGxState.fifoByteCount < 5) { g_diagFifoStallIndx.fetch_add(1, std::memory_order_relaxed); break; }
             const uint32_t xfValue = ReadBE32(data + 1);
             ApplyIndexedXfArrayForPacket(cmd, xfValue);
             GXCallDisplayList(data, 5);
@@ -477,7 +477,7 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
         }
 
         if (opcode == GX_CMD_CALL_DL_CMD) {
-            if (g_hleGxState.fifoByteCount < 9) break;
+            if (g_hleGxState.fifoByteCount < 9) { g_diagFifoStallCallDl.fetch_add(1, std::memory_order_relaxed); break; }
             const uint32_t listAddr = ReadBE32(data + 1);
             const uint32_t listSize = ReadBE32(data + 5);
             if (!consumeBytes(9, sink)) break;
@@ -488,7 +488,7 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
         }
 
         if (IsDrawOpcode(opcode)) {
-            if (g_hleGxState.fifoByteCount < 3) break;
+            if (g_hleGxState.fifoByteCount < 3) { g_diagFifoStallDraw.fetch_add(1, std::memory_order_relaxed); break; }
             // Temporary: count every draw opcode the parser sees (see g_diag*
             // decl in gx_internal.h; remove with the other counters).
             g_diagFifoDrawOpcode.fetch_add(1, std::memory_order_relaxed);
@@ -570,7 +570,7 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
         const VtxAttrFmt& fmt = g_hleGxState.vtxAttrFmt[g_hleGxState.currentVtxFmt][attr];
 
         if (IsMatrixIndexAttr(attr)) {
-            if (g_hleGxState.fifoByteCount < 1) break;
+            if (g_hleGxState.fifoByteCount < 1) { g_diagFifoStallAttr.fetch_add(1, std::memory_order_relaxed); break; }
             u32 raw = 0;
             if (!consumeBytes(1, raw)) break;
             if (!recordOnly) {
@@ -612,7 +612,7 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
             }
             
             const int compSize = GetCompSizeBytes(fmt.type);
-            if (compSize <= 0 || g_hleGxState.fifoByteCount < static_cast<size_t>(compSize)) break;
+            if (compSize <= 0 || g_hleGxState.fifoByteCount < static_cast<size_t>(compSize)) { g_diagFifoStallAttr.fetch_add(1, std::memory_order_relaxed); break; }
             u32 raw = 0;
             if (!consumeBytes(static_cast<uint32_t>(compSize), raw)) break;
             constexpr int kMaxComps = 9;
@@ -637,7 +637,7 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
         if (inputType == GX_INDEX8 || inputType == GX_INDEX16) {
             const uint32_t idxSize = (inputType == GX_INDEX8) ? 1u : 2u;
             const uint32_t indexCount = (attr == GX_VA_NRM) ? NormalIndexCount(fmt) : 1u;
-            if (g_hleGxState.fifoByteCount < idxSize * indexCount) break;
+            if (g_hleGxState.fifoByteCount < idxSize * indexCount) { g_diagFifoStallAttr.fetch_add(1, std::memory_order_relaxed); break; }
             u32 raw[3]{};
             for (uint32_t i = 0; i < indexCount; ++i) {
                 if (!consumeBytes(idxSize, raw[i])) break;

@@ -107,11 +107,23 @@ extern std::atomic<uint64_t> g_diagFifoUnknownByte;
 extern std::atomic<uint64_t> g_diagFifoBpPkts;
 extern std::atomic<uint64_t> g_diagFifoCpPkts;
 extern std::atomic<uint64_t> g_diagFifoXfPkts;
+extern std::atomic<uint64_t> g_diagFifoStallNop;
+extern std::atomic<uint64_t> g_diagFifoStallBp;
+extern std::atomic<uint64_t> g_diagFifoStallCp;
+extern std::atomic<uint64_t> g_diagFifoStallXf;
+extern std::atomic<uint64_t> g_diagFifoStallIndx;
+extern std::atomic<uint64_t> g_diagFifoStallCallDl;
+extern std::atomic<uint64_t> g_diagFifoStallDraw;
+extern std::atomic<uint64_t> g_diagFifoStallAttr;
 extern "C" void GX_HLE_DiagFifoSnapshot(uint64_t* outDraw, uint64_t* outRawOk, uint64_t* outRawFail,
                                         uint64_t* outIncr, uint64_t* outNull, uint64_t* outUnk,
                                         uint64_t* outBp, uint64_t* outCp, uint64_t* outXf,
                                         uint64_t* outInBegin, uint64_t* outVertsRem,
                                         uint64_t* outBacklog, uint64_t* outNAttr);
+extern "C" void GX_HLE_DiagFifoStallSnapshot(uint64_t* outNop, uint64_t* outBp, uint64_t* outCp,
+                                             uint64_t* outXf, uint64_t* outIndx,
+                                             uint64_t* outCallDl, uint64_t* outDraw,
+                                             uint64_t* outAttr);
 
 // --- Global State ---
 extern "C" {
