@@ -102,8 +102,10 @@ static bool TrySubmitRawDirectFifoDraw(const uint8_t* packet, uint32_t packetByt
     EnsureDefaultGxAlphaCompare();
 
     if (!aurora::gx::fifo::submit_raw_draw(prim, vtxFmt, packet + 3, vtxCount, packetBytes - 3u)) {
+        g_diagFifoRawFail.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
+    g_diagFifoRawOk.fetch_add(1, std::memory_order_relaxed);
     GXMarkFrameWork();
     return true;
 }
@@ -487,6 +489,9 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
 
         if (IsDrawOpcode(opcode)) {
             if (g_hleGxState.fifoByteCount < 3) break;
+            // Temporary: count every draw opcode the parser sees (see g_diag*
+            // decl in gx_internal.h; remove with the other counters).
+            g_diagFifoDrawOpcode.fetch_add(1, std::memory_order_relaxed);
             const uint16_t vtxCount = ReadBE16(data + 1);
             const GXVtxFmt vtxFmt = static_cast<GXVtxFmt>(cmd & GX_VAT_MASK_CMD);
             const GXPrimitive prim = OpcodeToGXPrimitive(cmd);
@@ -509,11 +514,13 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
             g_hleGxState.inBegin = true;
             g_hleGxState.auroraBeginCalled = false;
             g_hleGxState.ResetVertex();
+            g_diagFifoIncrBegin.fetch_add(1, std::memory_order_relaxed);
 
             break;
         }
 
         // Unknown FIFO command byte outside a begin packet; discard it so stream parsing can recover.
+        g_diagFifoUnknownByte.fetch_add(1, std::memory_order_relaxed);
         if (!consumeBytes(1, sink)) break;
     }
 
@@ -554,6 +561,7 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
         }
         GXAttr attr = g_hleGxState.currentAttr;
         if (attr == GX_VA_NULL) {
+            g_diagFifoNullReset.fetch_add(1, std::memory_order_relaxed);
             resetFifoBuffer();
             return;
         }
@@ -700,6 +708,7 @@ static uint32_t ApplyFifoPacketsDirect(const uint8_t* data, uint32_t sizeBytes) 
             if (avail < 5u) break;
             const uint32_t bpWord = ReadBE32(packet + 1);
             GXApplyBPReg(static_cast<uint8_t>(bpWord >> 24), bpWord & 0x00FFFFFFu);
+            g_diagFifoBpPkts.fetch_add(1, std::memory_order_relaxed);
             offset += 5u;
             continue;
         }
@@ -711,6 +720,7 @@ static uint32_t ApplyFifoPacketsDirect(const uint8_t* data, uint32_t sizeBytes) 
             // Same function the parser calls, so the CP registers it does not
             // decode (0x30/0x40 among them) are dropped here identically.
             GxCpDecode::ApplyCpRegWrite(reg, cpValue);
+            g_diagFifoCpPkts.fetch_add(1, std::memory_order_relaxed);
             offset += 6u;
             continue;
         }
@@ -722,6 +732,7 @@ static uint32_t ApplyFifoPacketsDirect(const uint8_t* data, uint32_t sizeBytes) 
             if (avail < packetBytes) break;
             GXCallDisplayList(packet, packetBytes);
             GXMarkFrameWork();
+            g_diagFifoXfPkts.fetch_add(1, std::memory_order_relaxed);
             offset += packetBytes;
             continue;
         }
@@ -779,6 +790,7 @@ extern "C" void GX_HLE_FIFO_WriteBurst(const uint8_t* data, uint32_t sizeBytes) 
     if (data == nullptr || sizeBytes == 0) {
         return;
     }
+    g_diagFifoByteCount.fetch_add(sizeBytes, std::memory_order_relaxed);
 
     if (IsDisplayListActive() && WriteDisplayListBurst(data, sizeBytes)) {
         return;

@@ -80,6 +80,39 @@ inline void GXMarkFrameWork() {
     g_auroraFrameHadWork.store(true, std::memory_order_release);
 }
 
+// Temporary submission counters to localize empty sealed frames (Android
+// watchdog readback): incremented on the guest thread for every GXBegin,
+// GXEnd, CallDisplayList, FIFO byte, and display-list Begin/End. Relaxed:
+// diagnostic only, never a sync edge. Remove once the black-screen cause
+// is found.
+extern std::atomic<uint64_t> g_diagGxBeginCount;
+extern std::atomic<uint64_t> g_diagGxEndCount;
+extern std::atomic<uint64_t> g_diagCallListCount;
+extern std::atomic<uint64_t> g_diagFifoByteCount;
+extern std::atomic<uint64_t> g_diagDlBeginCount;
+extern std::atomic<uint64_t> g_diagDlEndCount;
+// Snapshot helper (defined in gx_utils.cpp) for the Android JNI readback.
+extern "C" void GX_HLE_DiagSnapshot(uint64_t* begins, uint64_t* ends, uint64_t* callLists,
+                                    uint64_t* fifoBytes, uint64_t* dlBegins, uint64_t* dlEnds,
+                                    uint64_t* dlActive);
+// Temporary FIFO-parser outcome counters (see gx_fifo.cpp): split "bytes in,
+// zero verts out" into register packets vs draw opcodes vs silent discards.
+// Same relaxed/diagnostic/temporary contract as above.
+extern std::atomic<uint64_t> g_diagFifoDrawOpcode;
+extern std::atomic<uint64_t> g_diagFifoRawOk;
+extern std::atomic<uint64_t> g_diagFifoRawFail;
+extern std::atomic<uint64_t> g_diagFifoIncrBegin;
+extern std::atomic<uint64_t> g_diagFifoNullReset;
+extern std::atomic<uint64_t> g_diagFifoUnknownByte;
+extern std::atomic<uint64_t> g_diagFifoBpPkts;
+extern std::atomic<uint64_t> g_diagFifoCpPkts;
+extern std::atomic<uint64_t> g_diagFifoXfPkts;
+extern "C" void GX_HLE_DiagFifoSnapshot(uint64_t* outDraw, uint64_t* outRawOk, uint64_t* outRawFail,
+                                        uint64_t* outIncr, uint64_t* outNull, uint64_t* outUnk,
+                                        uint64_t* outBp, uint64_t* outCp, uint64_t* outXf,
+                                        uint64_t* outInBegin, uint64_t* outVertsRem,
+                                        uint64_t* outBacklog, uint64_t* outNAttr);
+
 // --- Global State ---
 extern "C" {
 extern int g_gxFrameCount;

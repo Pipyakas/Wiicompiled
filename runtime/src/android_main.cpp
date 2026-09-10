@@ -99,6 +99,47 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetFrameDiagnostics(JNIEnv* env
     return env->NewStringUTF(buf);
 }
 
+extern "C" void GX_HLE_DiagSnapshot(uint64_t*, uint64_t*, uint64_t*, uint64_t*, uint64_t*, uint64_t*, uint64_t*);
+extern "C" void GX_HLE_DiagFifoSnapshot(uint64_t*, uint64_t*, uint64_t*, uint64_t*, uint64_t*, uint64_t*,
+                                        uint64_t*, uint64_t*, uint64_t*, uint64_t*, uint64_t*,
+                                        uint64_t*, uint64_t*);
+void OS_HLE_DumpThreadsTemp();
+extern "C" void VI_HLE_DiagSnapshot(uint64_t*, uint64_t*, uint64_t*, uint64_t*);
+
+// Cumulative guest GX submission counters (see g_diag* in gx_utils.cpp):
+// zero begins/ends/lists while CopyDisps proceed = render thread parked;
+// begins without ends or verts = submission path broken.
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, jobject) {
+    uint64_t begins = 0, ends = 0, lists = 0, fifoBytes = 0, dlBegins = 0, dlEnds = 0, dlActive = 0;
+    GX_HLE_DiagSnapshot(&begins, &ends, &lists, &fifoBytes, &dlBegins, &dlEnds, &dlActive);
+    uint64_t fdraw = 0, frawok = 0, frawfail = 0, fincr = 0, fnull = 0, funk = 0;
+    uint64_t fbp = 0, fcp = 0, fxf = 0, fib = 0, vrem = 0, fback = 0, nattr = 0;
+    GX_HLE_DiagFifoSnapshot(&fdraw, &frawok, &frawfail, &fincr, &fnull, &funk,
+                            &fbp, &fcp, &fxf, &fib, &vrem, &fback, &nattr);
+    uint64_t viadv = 0, vipost = 0, viguard = 0, viret = 0;
+    VI_HLE_DiagSnapshot(&viadv, &vipost, &viguard, &viret);
+    char buf[512];
+    std::snprintf(buf, sizeof(buf), "gxbeg=%llu gxend=%llu gxdl=%llu gxfifo=%llu dlbeg=%llu dlend=%llu dlact=%llu"
+        " fdraw=%llu frawok=%llu frawfail=%llu fincr=%llu fnull=%llu funk=%llu fbp=%llu fcp=%llu fxf=%llu fib=%llu vrem=%llu fback=%llu nattr=%llu"
+        " viadv=%llu vipost=%llu viguard=%llu viret=%llu",
+        (unsigned long long)begins, (unsigned long long)ends,
+        (unsigned long long)lists, (unsigned long long)fifoBytes,
+        (unsigned long long)dlBegins, (unsigned long long)dlEnds,
+        (unsigned long long)dlActive,
+        (unsigned long long)fdraw, (unsigned long long)frawok, (unsigned long long)frawfail,
+        (unsigned long long)fincr, (unsigned long long)fnull, (unsigned long long)funk,
+        (unsigned long long)fbp, (unsigned long long)fcp, (unsigned long long)fxf,
+        (unsigned long long)fib, (unsigned long long)vrem, (unsigned long long)fback,
+        (unsigned long long)nattr,
+        (unsigned long long)viadv, (unsigned long long)vipost,
+        (unsigned long long)viguard, (unsigned long long)viret);
+    // Temporary: one-shot guest thread dump per watchdog sample (logcat THRDUMP
+    // lines). Remove with the GX counters.
+    OS_HLE_DumpThreadsTemp();
+    return env->NewStringUTF(buf);
+}
+
 static uint32_t g_discGameCode = 0;
 extern "C" uint32_t Android_GetDiscGameCode() { return g_discGameCode; }
 

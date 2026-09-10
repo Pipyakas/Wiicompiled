@@ -275,6 +275,7 @@ void ServiceDeferredTimingDuringGxWork() {
 }
 
 extern "C" void GX__Begin_8016f0f0(uint32_t t, uint32_t vf, uint32_t nv) {
+    g_diagGxBeginCount.fetch_add(1, std::memory_order_relaxed);
     if(IsDisplayListActive()){
         WriteDisplayListData((u8)(t|vf), 1);
         WriteDisplayListData((u16)nv, 2);
@@ -289,7 +290,7 @@ extern "C" void GX__Begin_8016f0f0(uint32_t t, uint32_t vf, uint32_t nv) {
 }
 PPC_NATIVE_OVERRIDE_VOID(8016f0f0, GX__Begin_8016f0f0, (uint32_t t, uint32_t vf, uint32_t nv), (t, vf, nv));
 
-extern "C" void GX__End_80044b30() { g_hleGxState.inBegin=false; GXEnd(); }
+extern "C" void GX__End_80044b30() { g_diagGxEndCount.fetch_add(1, std::memory_order_relaxed); g_hleGxState.inBegin=false; GXEnd(); }
 PPC_NATIVE_OVERRIDE_VOID(80044b30, GX__End_80044b30, (), ());
 
 extern "C" void GX__End_80048c30() { GX__End_80044b30(); }

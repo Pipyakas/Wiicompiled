@@ -232,6 +232,8 @@ static void InvokeDvdCallback(uint32_t callbackPtr, int32_t result, uint32_t fil
     auto& cpu = GetPersistentCpuContext();
     cpu.gpr[3] = static_cast<uint32_t>(result);
     cpu.gpr[4] = fileInfoPtr;
+    // Name the callback in the watchdog PC mirror (see os_alarm.cpp).
+    RecompMod::ScopedTranslatedExecutionAddress dvdExecution(callbackPtr);
     InvokeIndirectCpu(callbackPtr, &cpu);
 }
 
@@ -246,6 +248,7 @@ static void InvokeDvdLowCallback(uint32_t callbackPtr, int32_t result) {
     }
     auto& cpu = GetPersistentCpuContext();
     cpu.gpr[3] = static_cast<uint32_t>(result);
+    RecompMod::ScopedTranslatedExecutionAddress dvdExecution(callbackPtr);
     InvokeIndirectCpu(callbackPtr, &cpu);
 }
 

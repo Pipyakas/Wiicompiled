@@ -9,12 +9,13 @@ extern "C" void __GXSetSUTexRegs();
 
 extern "C" void GX_HLE_FIFO_WriteFloat(float val) {
     u32 raw; std::memcpy(&raw, &val, 4);
+    g_diagFifoByteCount.fetch_add(4, std::memory_order_relaxed);
     try { HleFifoWrite(raw, 4); } catch (...) { RT_LOGF(RT_TAG_GX, "FIFO write float failed\n"); }
 }
 
-extern "C" void GX_HLE_FIFO_Write32(uint32_t val) { HleFifoWrite(val, 4); }
-extern "C" void GX_HLE_FIFO_Write16(uint16_t val) { HleFifoWrite(static_cast<u32>(val), 2); }
-extern "C" void GX_HLE_FIFO_Write8(uint8_t val) { HleFifoWrite(static_cast<u32>(val), 1); }
+extern "C" void GX_HLE_FIFO_Write32(uint32_t val) { g_diagFifoByteCount.fetch_add(4, std::memory_order_relaxed); HleFifoWrite(val, 4); }
+extern "C" void GX_HLE_FIFO_Write16(uint16_t val) { g_diagFifoByteCount.fetch_add(2, std::memory_order_relaxed); HleFifoWrite(static_cast<u32>(val), 2); }
+extern "C" void GX_HLE_FIFO_Write8(uint8_t val) { g_diagFifoByteCount.fetch_add(1, std::memory_order_relaxed); HleFifoWrite(static_cast<u32>(val), 1); }
 
 extern "C" void GX__SetDrawSync_8016ed08(uint32_t token) {
     (void)token;

@@ -17,6 +17,59 @@ bool g_alphaCompareValid = false;
 
 TexCopyState g_texCopyState;
 
+// Temporary GX submission counters (declared in gx_internal.h).
+std::atomic<uint64_t> g_diagGxBeginCount{0};
+std::atomic<uint64_t> g_diagGxEndCount{0};
+std::atomic<uint64_t> g_diagCallListCount{0};
+std::atomic<uint64_t> g_diagFifoByteCount{0};
+std::atomic<uint64_t> g_diagDlBeginCount{0};
+std::atomic<uint64_t> g_diagDlEndCount{0};
+std::atomic<uint64_t> g_diagFifoDrawOpcode{0};
+std::atomic<uint64_t> g_diagFifoRawOk{0};
+std::atomic<uint64_t> g_diagFifoRawFail{0};
+std::atomic<uint64_t> g_diagFifoIncrBegin{0};
+std::atomic<uint64_t> g_diagFifoNullReset{0};
+std::atomic<uint64_t> g_diagFifoUnknownByte{0};
+std::atomic<uint64_t> g_diagFifoBpPkts{0};
+std::atomic<uint64_t> g_diagFifoCpPkts{0};
+std::atomic<uint64_t> g_diagFifoXfPkts{0};
+
+extern "C" void GX_HLE_DiagSnapshot(uint64_t* begins, uint64_t* ends, uint64_t* callLists,
+                                    uint64_t* fifoBytes, uint64_t* dlBegins, uint64_t* dlEnds,
+                                    uint64_t* dlActive) {
+    if (begins) *begins = g_diagGxBeginCount.load(std::memory_order_relaxed);
+    if (ends) *ends = g_diagGxEndCount.load(std::memory_order_relaxed);
+    if (callLists) *callLists = g_diagCallListCount.load(std::memory_order_relaxed);
+    if (fifoBytes) *fifoBytes = g_diagFifoByteCount.load(std::memory_order_relaxed);
+    if (dlBegins) *dlBegins = g_diagDlBeginCount.load(std::memory_order_relaxed);
+    if (dlEnds) *dlEnds = g_diagDlEndCount.load(std::memory_order_relaxed);
+    if (dlActive) *dlActive = IsDisplayListActive() ? 1u : 0u;
+}
+
+extern "C" void GX_HLE_DiagFifoSnapshot(uint64_t* outDraw, uint64_t* outRawOk, uint64_t* outRawFail,
+                                        uint64_t* outIncr, uint64_t* outNull, uint64_t* outUnk,
+                                        uint64_t* outBp, uint64_t* outCp, uint64_t* outXf,
+                                        uint64_t* outInBegin, uint64_t* outVertsRem,
+                                        uint64_t* outBacklog, uint64_t* outNAttr) {
+    if (outDraw) *outDraw = g_diagFifoDrawOpcode.load(std::memory_order_relaxed);
+    if (outRawOk) *outRawOk = g_diagFifoRawOk.load(std::memory_order_relaxed);
+    if (outRawFail) *outRawFail = g_diagFifoRawFail.load(std::memory_order_relaxed);
+    if (outIncr) *outIncr = g_diagFifoIncrBegin.load(std::memory_order_relaxed);
+    if (outNull) *outNull = g_diagFifoNullReset.load(std::memory_order_relaxed);
+    if (outUnk) *outUnk = g_diagFifoUnknownByte.load(std::memory_order_relaxed);
+    if (outBp) *outBp = g_diagFifoBpPkts.load(std::memory_order_relaxed);
+    if (outCp) *outCp = g_diagFifoCpPkts.load(std::memory_order_relaxed);
+    if (outXf) *outXf = g_diagFifoXfPkts.load(std::memory_order_relaxed);
+    if (outInBegin) *outInBegin = g_hleGxState.inBegin ? 1u : 0u;
+    if (outVertsRem) *outVertsRem = g_hleGxState.vertsRemaining;
+    if (outBacklog) *outBacklog = static_cast<uint64_t>(g_hleGxState.fifoByteCount);
+    if (outNAttr) {
+        uint64_t n = 0;
+        for (int i = 0; i < 26; ++i) if (g_hleGxState.vtxDesc[i] != GX_NONE) ++n;
+        *outNAttr = n;
+    }
+}
+
 GXColor DecodeGxColor(uint32_t colorWord) {
     GXColor color{};
     color.r = static_cast<uint8_t>((colorWord >> 24) & 0xFF);

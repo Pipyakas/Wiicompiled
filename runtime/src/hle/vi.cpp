@@ -1,4 +1,5 @@
 #include "hle_stubs.h"
+#include "recomp_mod_loader.h"
 #include "memory.h"
 #include "abi_bridge.h"
 #include "guest_interrupt_context.h"
@@ -298,13 +299,31 @@ static std::atomic<bool> s_inAdvanceRetrace{false};
 // end the freshly pre-warmed empty frame and show it as a black frame group.
 static std::atomic<bool> s_presentSequenceActive{false};
 
+// Temporary black-screen probes: counts AdvanceRetrace executions and
+// post-retrace callback invocations on both retrace paths. If vipost never
+// advances, the display thread's wake source is dead upstream (wall-clock
+// polling). Remove with the GX counters once the cause is found.
+std::atomic<uint64_t> g_diagViAdvanceCount{0};
+std::atomic<uint64_t> g_diagViPostCbCount{0};
+extern "C" void VI_HLE_DiagSnapshot(uint64_t* outAdvance, uint64_t* outPostCb,
+                                    uint64_t* outGuard, uint64_t* outRetraceCount) {
+    if (outAdvance) *outAdvance = g_diagViAdvanceCount.load(std::memory_order_relaxed);
+    if (outPostCb) *outPostCb = g_diagViPostCbCount.load(std::memory_order_relaxed);
+    if (outGuard) *outGuard = s_inAdvanceRetrace.load(std::memory_order_acquire) ? 1u : 0u;
+    if (outRetraceCount) {
+        std::lock_guard<std::mutex> lock(g_viMutex);
+        *outRetraceCount = g_vi.retraceCount;
+    }
+}
+
 void AdvanceRetrace(CpuContext* ctx, Clock::time_point retraceStamp, bool serviceAurora) {
     // Prevent re-entry - this can happen if OSWakeupThread triggers SelectThread
     // which goes idle and calls ProcessTimerEvents again
     if (s_inAdvanceRetrace.exchange(true)) {
         return;
     }
-    
+    g_diagViAdvanceCount.fetch_add(1, std::memory_order_relaxed);
+
     uint32_t preCb = 0;
     uint32_t postCb = 0;
     uint32_t retraceValue = 0;
@@ -357,6 +376,8 @@ void AdvanceRetrace(CpuContext* ctx, Clock::time_point retraceStamp, bool servic
     if (ctx) {
         ctx->gpr[3] = retraceValue;
         if (preCb) {
+            // Name the callback in the watchdog PC mirror (see os_alarm.cpp).
+            RecompMod::ScopedTranslatedExecutionAddress preExecution(preCb);
             InvokeIndirectCpu(preCb, ctx);
         }
         if (postCb) {
@@ -364,6 +385,8 @@ void AdvanceRetrace(CpuContext* ctx, Clock::time_point retraceStamp, bool servic
             // The callback dereferences sSystem which must be non-null
             uint32_t sSystemPtr = Memory::Read32(kEggSSystemAddr);
             if (sSystemPtr != 0) {
+                g_diagViPostCbCount.fetch_add(1, std::memory_order_relaxed);
+                RecompMod::ScopedTranslatedExecutionAddress postExecution(postCb);
                 InvokeIndirectCpu(postCb, ctx);
             }
         }
@@ -856,6 +879,12 @@ extern "C" void VISetNextFrameBuffer_HLE_801baab8(CpuContext* ctx)
         EnsureInitializedLocked();
         // Write to PENDING state - will be committed on next retrace after VIFlush
         g_vi.pendingNextFrameBuffer = fbPtr;
+        // A fresh XFB means the previous one is fully consumed: drop any stale
+        // ready flag so a same-address copy never presents old contents twice
+        // and a mismatched copy never blocks the pre-warmed next frame.
+        // (CopyDisp re-arms it immediately after resolving the new contents.)
+        g_vi.hasValidXfb = false;
+        g_vi.readyXfb = 0;
         // Also update guest memory for SDK code that reads this directly
         WriteGuestStateLocked();
     }
@@ -947,10 +976,16 @@ extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
         std::lock_guard<std::mutex> lock(g_viMutex);
         EnsureInitializedLocked();
     }
-    // One boundary per call; no OSSleepThread. AdvanceRetrace would bump a
-    // second time, so bump + wake + callbacks inline. Shares AdvanceRetrace's
-    // locked update (pending-state commit, retrace bump, guest publish) so
-    // the two paths cannot drift.
+    // One boundary per call. Shares AdvanceRetrace's locked update
+    // (pending-state commit, retrace bump, guest publish) so the two paths
+    // cannot drift.
+    //
+    // The retrace-queue wait this wakes belongs to fibers (the display thread
+    // sleeps here between frames), so the wake MUST be rescheduling: the
+    // reschedule runs the woken fiber's callbacks on its own register file
+    // instead of the waiter's. The no-reschedule variant corrupted the
+    // waiter's resident registers through postVRetrace (wild r29 read) and
+    // stranded the render thread one frame in — the persistent black screen.
     const uint32_t savedR3 = cpu->gpr[3];
     const uint32_t savedR28 = cpu->gpr[28];
     uint32_t preCb = 0, postCb = 0;
@@ -969,16 +1004,25 @@ extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
         g_vi.retraces.fetch_add(1, std::memory_order_relaxed);
 #endif
     }
-    // No-reschedule wake: the strap thread runs on the scheduler fiber
-    // itself, so a rescheduling wake parks it via SelectThread with nobody
-    // to resume it. Threads still go READY; the scheduler picks them up at
-    // the next safe point.
-    OS_HLE_WakeupThreadNoReschedule(cpu, kViRetraceQueueAddr);
-    if (preCb) InvokeIndirectCpu(preCb, cpu);
+    cpu->gpr[3] = kViRetraceQueueAddr;
+    OSWakeupThread_HLE_801aaaa4(cpu);
+    cpu->gpr[3] = savedR3;
+    if (preCb) {
+        GuestInterruptCallbackContext preInterrupt;
+        CpuContext* preCpu = preInterrupt.get();
+        // Name the callback in the watchdog PC mirror (see os_alarm.cpp).
+        RecompMod::ScopedTranslatedExecutionAddress preExecution(preCb);
+        InvokeIndirectCpu(preCb, preCpu);
+    }
     if (postCb) {
         uint32_t sys = 0;
         try { sys = Memory::Read32(kEggSSystemAddr); } catch (...) {}
-        if (sys != 0) InvokeIndirectCpu(postCb, cpu);
+        if (sys != 0) {
+            g_diagViPostCbCount.fetch_add(1, std::memory_order_relaxed);
+            GuestInterruptCallbackContext postInterrupt;
+            RecompMod::ScopedTranslatedExecutionAddress postExecution(postCb);
+            InvokeIndirectCpu(postCb, postInterrupt.get());
+        }
     }
     cpu->gpr[3] = savedR3;
     cpu->gpr[28] = savedR28;

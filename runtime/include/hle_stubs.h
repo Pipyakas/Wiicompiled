@@ -33,6 +33,13 @@ void Audio_HLE_Poll(CpuContext* ctx);
 // arbitrary translated function.
 void Audio_HLE_PollDeferred();
 bool OS_HLE_InterruptsEnabled() noexcept;
+// Temporary guest-thread dump for black-screen diagnosis (remove with the GX
+// counters once the cause is found). Defined in os_scheduler.cpp.
+void OS_HLE_DumpThreadsTemp();
+// Temporary VI retrace pulse counters (defined in vi.cpp): AdvanceRetrace
+// executions vs post-retrace callback invocations on both retrace paths.
+extern "C" void VI_HLE_DiagSnapshot(uint64_t* outAdvance, uint64_t* outPostCb,
+                                    uint64_t* outGuard, uint64_t* outRetraceCount);
 extern "C" void OS_HLE_ProcessAlarmsDeferred(int maxToProcess);
 extern "C" void OS_HLE_BeginDeferredGuestCallbacks();
 extern "C" void OS_HLE_EndDeferredGuestCallbacks();

@@ -27,6 +27,7 @@ public class GameActivity extends SDLActivity implements SensorEventListener {
         // UnsatisfiedLinkError and silently leaves the files dir unset.
         try { nativeSetFilesDir(getFilesDir().getAbsolutePath()); } catch (Throwable t) { Log.e(TAG,"setFilesDir",t); }
         startStallWatchdog();
+        startPcHistogram();
         getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if (sensorManager!=null&&gyroSensor!=null) sensorManager.registerListener(this,gyroSensor,SensorManager.SENSOR_DELAY_GAME);
     }
@@ -48,6 +49,7 @@ public class GameActivity extends SDLActivity implements SensorEventListener {
     private native int nativeGetRetraces();
     private native long nativeGetRendererPresents();
     private native String nativeGetFrameDiagnostics();
+    private native String nativeGetGxDiagnostics();
     @Override public boolean onKeyDown(int kc,KeyEvent ev){ if(kc==KeyEvent.KEYCODE_BACK){ try{nativeOnBackPressed();}catch(UnsatisfiedLinkError ignored){} return true;} return super.onKeyDown(kc,ev);}
     private native void nativeOnBackPressed();
     // Logs guest-PC samples while the game runs. The SDL thread owns guest
@@ -84,9 +86,45 @@ public class GameActivity extends SDLActivity implements SensorEventListener {
                 lastPres = pres; lastRet = ret;
                 String diag = "";
                 try { diag = " " + nativeGetFrameDiagnostics(); } catch (Throwable ignored) {}
-                Log.i(TAG,String.format("watchdog: guest PC 0x%08X presented=%d retraces=%d rpres=%d%s%s", pc, pres, ret, rpres, frameNote, diag));
+                String gx = "";
+                try { gx = " " + nativeGetGxDiagnostics(); } catch (Throwable ignored) {}
+                Log.i(TAG,String.format("watchdog: guest PC 0x%08X presented=%d retraces=%d rpres=%d%s%s%s", pc, pres, ret, rpres, frameNote, diag, gx));
             }
         }, "StallWatchdog").start();
+    }
+    // PC histogram: samples the guest PC every 50ms for 60s, then logs the
+    // top addresses with counts. Distinguishes "in DrawDone loop 100% of the
+    // time" (render thread alone, display thread starved) from "PC spread
+    // across game code" (both threads running). Temporary: remove with the
+    // GX counters once the black-screen cause is found.
+    private void startPcHistogram() {
+        new Thread(() -> {
+            try { Thread.sleep(45000); } catch (InterruptedException ignored) { return; }
+            java.util.HashMap<Integer,Integer> hist = new java.util.HashMap<>();
+            for (int i = 0; i < 1200; i++) {
+                try { Thread.sleep(50); } catch (InterruptedException ignored) { return; }
+                int pc = 0;
+                try { pc = nativeGetGuestExecutionAddress(); } catch (Throwable ignored) { return; }
+                hist.put(pc, hist.getOrDefault(pc, 0) + 1);
+            }
+            java.util.ArrayList<java.util.Map.Entry<Integer,Integer>> es = new java.util.ArrayList<>(hist.entrySet());
+            es.sort((a,b) -> b.getValue() - a.getValue());
+            // Full histogram in chunks (logcat truncates long lines): every
+            // distinct PC matters, not just the top — StrapScene::calc's
+            // indirect targets may sit at low counts.
+            StringBuilder sb = new StringBuilder("pchist n=" + es.size());
+            for (int i = 0; i < es.size(); i++) {
+                sb.append(String.format(" 0x%08X=%d", es.get(i).getKey(), es.get(i).getValue()));
+                if ((i + 1) % 12 == 0 || i + 1 == es.size()) {
+                    Log.i(TAG, sb.toString());
+                    sb = new StringBuilder("pchist+:");
+                }
+            }
+            // Explicit zero-confirmation for the scene functions of interest.
+            Log.i(TAG, String.format("pchist? calc(0x800079D0)=%d draw(0x80007BC8)=%d enter(0x800074D8)=%d check(0x800077C8)=%d",
+                hist.getOrDefault(0x800079D0, 0), hist.getOrDefault(0x80007BC8, 0),
+                hist.getOrDefault(0x800074D8, 0), hist.getOrDefault(0x800077C8, 0)));
+        }, "PcHistogram").start();
     }
 
 }

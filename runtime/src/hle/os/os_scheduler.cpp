@@ -561,3 +561,37 @@ extern "C" void OSUnlockMutex_HLE_801a7fc0(CpuContext* ctx)
 }
 PPC_NATIVE_OVERRIDE_VOID(801A7FC0, OSUnlockMutex_HLE_801a7fc0, (CpuContext* ctx), (ctx));
 
+// Temporary guest-thread dump: logs every guest OSThread on the thread list
+// with state/suspend/prio/effective-prio/srr0(pc)/lr/queue. Lets logcat answer
+// "which threads exist, who's RUNNING, and where is the render thread parked"
+// without a debugger. Remove with the GX counters once the black screen is found.
+void OS_HLE_DumpThreadsTemp() {
+    try {
+        const char* kStateName[] = {"?", "READY", "RUN", "?", "WAIT", "?", "?", "?", "MORB"};
+        for (uint32_t it = ::Memory::Read32(kThreadListHeadAddr); it != 0;
+             it = ::Memory::Read32(it + kThreadListNextOffset)) {
+            if (!::Memory::Contains(it, 0x310u)) break;
+            const uint16_t state = ::Memory::Read16(it + kThreadStateOffset);
+            const int32_t susp = static_cast<int32_t>(::Memory::Read32(it + kThreadSuspendOffset));
+            const uint32_t prio = ::Memory::Read32(it + kThreadPriorityOffset);
+            const uint32_t effPrio = ::Memory::Read32(it + kThreadBasePriorityOffset);
+            const uint32_t srr0 = ::Memory::Read32(it + 0x198u);
+            const uint32_t lr = ::Memory::Read32(it + 0x84u);
+            const uint32_t queue = ::Memory::Read32(it + kThreadQueueOffset);
+            const uint32_t cur = (it == ::Memory::Read32(kOSCurrentContextAddr)) ? 1u : 0u;
+            const uint32_t run = (it == ::Memory::Read32(kOSRunningContextAddr)) ? 1u : 0u;
+            RT_LOG(RT_TAG_OS) << "THRDUMP thr=0x" << std::hex << it << std::dec
+                      << " st=" << (state < 9 ? kStateName[state] : "?") << "(" << state << ")"
+                      << " susp=" << susp << " prio=" << prio << " base=" << effPrio
+                      << " srr0=0x" << std::hex << srr0 << " lr=0x" << lr
+                      << " q=0x" << queue << std::dec
+                      << (cur ? " CUR" : "") << (run ? " RUN" : "") << std::endl;
+        }
+        RT_LOG(RT_TAG_OS) << "THRDUMP idle=" << ::Memory::Read32(kSchedulerIdleFlagAddr)
+                  << " pending=0x" << std::hex << ::Memory::Read32(kSchedulerPendingFlagAddr)
+                  << " resched=" << std::dec << ::Memory::Read32(kSchedulerReschedCounterAddr)
+                  << std::endl;
+    } catch (const ::Memory::AccessViolation&) {
+    }
+}
+

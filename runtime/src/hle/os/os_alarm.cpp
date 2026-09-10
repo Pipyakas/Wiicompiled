@@ -5,6 +5,7 @@
 #include <mutex>
 
 #include "abi_bridge.h"
+#include "recomp_mod_loader.h"
 #include "memory.h"
 #include "guest_interrupt_context.h"
 #include "hle_stubs.h"
@@ -216,6 +217,10 @@ bool ProcessAlarmQueue(CpuContext* cpu, int maxToProcess)
                     try {
                         cpu->gpr[3] = alarm;
                         cpu->gpr[4] = ::Memory::Read32(kOSCurrentContextAddr);
+                        // The handler runs on the caller's register file but
+                        // re-enters the translated world, so the watchdog PC
+                        // mirror must name it, not the interrupted function.
+                        RecompMod::ScopedTranslatedExecutionAddress alarmExecution(handler);
                         InvokeIndirectCpu(handler, cpu);
                     } catch (...) {
                         DecrementSchedulerDisableCount();

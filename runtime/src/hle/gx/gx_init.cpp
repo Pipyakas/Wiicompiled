@@ -166,6 +166,7 @@ PPC_NATIVE_OVERRIDE_VOID(8016ee14, __GX__PEInit_8016ee14, (), ());
 // ============================================================================
 
 extern "C" void GX__BeginDisplayList_80172e00(uint32_t la, uint32_t s) {
+    g_diagDlBeginCount.fetch_add(1, std::memory_order_relaxed);
     try {
         uint32_t gd = Memory::Read32(kGXDataPtrAddr);
         if (!gd) return;
@@ -189,6 +190,7 @@ extern "C" void GX__BeginDisplayList_80172e00(uint32_t la, uint32_t s) {
 PPC_NATIVE_OVERRIDE_VOID(80172e00, GX__BeginDisplayList_80172e00, (uint32_t la, uint32_t s), (la, s));
 
 extern "C" uint32_t GX__EndDisplayList_80172eb4() {
+    g_diagDlEndCount.fetch_add(1, std::memory_order_relaxed);
     try {
         GXFlush();
         GX__GetCPUFifo_8016cf10(0x80344090);

@@ -38,11 +38,14 @@ static void DispatchNandCallback(CpuContext* cpu, uint32_t callbackPtr, int32_t 
         callbackCpu.gpr[3] = static_cast<uint32_t>(result);
         callbackCpu.gpr[4] = commandBlock;
         CpuContextScope callbackScope(&callbackCpu);
+        // Name the callback in the watchdog PC mirror (see os_alarm.cpp).
+        RecompMod::ScopedTranslatedExecutionAddress nandExecution(callbackPtr);
         InvokeIndirectCpu(callbackPtr, &callbackCpu);
     } else {
         auto& callbackCpu = GetPersistentCpuContext();
         callbackCpu.gpr[3] = static_cast<uint32_t>(result);
         callbackCpu.gpr[4] = commandBlock;
+        RecompMod::ScopedTranslatedExecutionAddress nandExecution(callbackPtr);
         InvokeIndirectCpu(callbackPtr, &callbackCpu);
     }
 }
