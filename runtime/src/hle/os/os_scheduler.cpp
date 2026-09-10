@@ -591,6 +591,32 @@ void OS_HLE_DumpThreadsTemp() {
                   << " pending=0x" << std::hex << ::Memory::Read32(kSchedulerPendingFlagAddr)
                   << " resched=" << std::dec << ::Memory::Read32(kSchedulerReschedCounterAddr)
                   << std::endl;
+        // Temporary: AsyncDisplay object vs parked display thread. The loop
+        // counter at async+104/108 advances once per postVRetrace wake (its
+        // wake target is the OSThreadQueue embedded at async+88, whose head
+        // slot is what the dump prints). beginFrame parks on that same queue
+        // and exits when its counter passes byte[async+8]. If the wake queue
+        // ever diverges from the parked queue (stale object after
+        // re-construction), the display thread sleeps forever and no scene
+        // work is ever submitted. Remove with the GX counters.
+        try {
+            const uint32_t async = ::Memory::Read32(0x80386D90u);
+            if (async != 0 && ::Memory::Contains(async, 0x80u)) {
+                const uint32_t wakeQ = async + 88u;
+                const uint32_t qHead = ::Memory::Read32(wakeQ);
+                RT_LOG(RT_TAG_OS) << "THRDUMP async=0x" << std::hex << async
+                          << " wakeQ=0x" << wakeQ << " qhead=0x" << qHead
+                          << " flag8=0x" << ::Memory::Read8(async + 0x08u)
+                          << " cnt104=0x" << ::Memory::Read32(async + 0x68u)
+                          << " cnt108=0x" << ::Memory::Read32(async + 0x6Cu)
+                          << " w96=0x" << ::Memory::Read32(async + 0x60u)
+                          << std::dec << std::endl;
+            } else {
+                RT_LOG(RT_TAG_OS) << "THRDUMP async-global=0x" << std::hex
+                          << ::Memory::Read32(0x80386D90u) << std::dec << std::endl;
+            }
+        } catch (const ::Memory::AccessViolation&) {
+        }
     } catch (const ::Memory::AccessViolation&) {
     }
 }
