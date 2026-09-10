@@ -158,7 +158,8 @@ void aurora_get_sealed_frame_diagnostics(uint64_t* outDraws, uint64_t* outVertBy
                                          uint64_t* outUniformBytes, uint64_t* outTexBytes,
                                          uint64_t* outSealed, uint32_t* outPsW, uint32_t* outPsH,
                                          uint32_t* outPsIsXfb, uint64_t* outSealedDraws,
-                                         uint64_t* outSealedCmds, uint64_t* outSealedPasses);
+                                         uint64_t* outSealedCmds, uint64_t* outSealedPasses,
+                                         uint64_t* outEndBatchDraws);
 #endif
 bool aurora_flush_efb_copies_to_ram();
 bool aurora_flush_efb_copy_to_ram(void* dest);

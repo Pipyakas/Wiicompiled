@@ -86,16 +86,16 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_org_patchzyy_wiicompiled_GameActivity_nativeGetFrameDiagnostics(JNIEnv* env, jobject) {
     uint64_t draws = 0, vert = 0, uni = 0, tex = 0, sealed = 0;
     uint32_t psw = 0, psh = 0, psxfb = 0;
-    uint64_t sdraws = 0, scmds = 0, spasses = 0;
+    uint64_t sdraws = 0, scmds = 0, spasses = 0, ebdraws = 0;
     aurora_get_sealed_frame_diagnostics(&draws, &vert, &uni, &tex, &sealed,
-        &psw, &psh, &psxfb, &sdraws, &scmds, &spasses);
+        &psw, &psh, &psxfb, &sdraws, &scmds, &spasses, &ebdraws);
     char buf[256];
-    std::snprintf(buf, sizeof(buf), "draws=%llu vert=%llu uni=%llu tex=%llu sealed=%llu ps=%ux%u%s sdraws=%llu scmds=%llu spass=%llu",
+    std::snprintf(buf, sizeof(buf), "draws=%llu vert=%llu uni=%llu tex=%llu sealed=%llu ps=%ux%u%s sdraws=%llu scmds=%llu spass=%llu eb=%llu",
         (unsigned long long)draws, (unsigned long long)vert,
         (unsigned long long)uni, (unsigned long long)tex,
         (unsigned long long)sealed, psw, psh, psxfb ? "[xfb]" : "[fb]",
         (unsigned long long)sdraws, (unsigned long long)scmds,
-        (unsigned long long)spasses);
+        (unsigned long long)spasses, (unsigned long long)ebdraws);
     return env->NewStringUTF(buf);
 }
 

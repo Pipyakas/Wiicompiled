@@ -149,10 +149,13 @@ uint32_t g_drawCallCount = 0;
 uint32_t g_mergedDrawCallCount = 0;
 #if defined(__ANDROID__)
 // Sealed-frame workload mirrors (see seal_frame): Draw commands vs all
-// commands vs pass count of the frame just handed to the encode phase.
+// commands vs pass count of the frame just handed to the encode phase, plus
+// the end_batch_impl recorded-draw total for the same seal. Recorded-with-
+// zero-sealed localizes the drop to between recording and sealing.
 std::atomic<uint64_t> g_sealedFrameDrawCommands{0};
 std::atomic<uint64_t> g_sealedFrameCommands{0};
 std::atomic<uint64_t> g_sealedFramePasses{0};
+std::atomic<uint64_t> g_endBatchDrawCalls{0};
 #endif
 
 using CommandList = std::vector<Command>;
@@ -1174,6 +1177,14 @@ static void end_batch_impl(const wgpu::CommandEncoder& cmd, bool advanceFrame) {
   if (advanceFrame) {
     ++g_frameIndex;
   }
+#if defined(__ANDROID__)
+  // Companion to the seal_frame() mirrors below: the per-seal recorded-draw
+  // total (g_stats.drawCallCount) vs the per-seal sealed Draw commands. A
+  // recorded count with zero sealed draws means the recorded commands were
+  // dropped between recording and sealing — the split this whole
+  // investigation is trying to localize.
+  g_endBatchDrawCalls.store(g_drawCallCount, std::memory_order_relaxed);
+#endif
 }
 
 void end_frame(const wgpu::CommandEncoder& cmd) { end_batch_impl(cmd, true); }

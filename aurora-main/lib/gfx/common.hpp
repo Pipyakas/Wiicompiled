@@ -316,6 +316,7 @@ void seal_frame(SealedFrame& out) noexcept;
 extern std::atomic<uint64_t> g_sealedFrameDrawCommands;
 extern std::atomic<uint64_t> g_sealedFrameCommands;
 extern std::atomic<uint64_t> g_sealedFramePasses;
+extern std::atomic<uint64_t> g_endBatchDrawCalls;
 #endif
 
 // Encode a sealed frame. Never touches the producer-visible recording state,
