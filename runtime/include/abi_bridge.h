@@ -47,6 +47,20 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> setBlack{0};   // 0x801BAB2C Run: VISetBlack (r3!=0:black)
     std::atomic<uint64_t> setBlack0{0};  // ... with r3==0 (unblack)
     std::atomic<uint64_t> setBlack1{0};  // ... with r3!=0 (black)
+    // Last vtable slot invoked through InvokeIndirectCpu (slot = target -
+    // *r3 when r3 points at a guest object whose first word is a vtable and
+    // the target falls within vt+128; 0xFFFFFFFF = none yet) plus hit counts
+    // per Run vtable slot. Temporary: names which virtuals Run actually
+    // reaches. Remove with the GX counters.
+    std::atomic<uint64_t> lastIndSlot{0xFFFFFFFFull};
+    std::atomic<uint64_t> lastIndTarget{0};
+    std::atomic<uint64_t> ind16{0};  // vtable+16 (first Run virtual)
+    std::atomic<uint64_t> ind20{0};  // vtable+20
+    std::atomic<uint64_t> ind24{0};  // vtable+24 (SceneManager-slot-ish)
+    std::atomic<uint64_t> ind28{0};  // vtable+28
+    std::atomic<uint64_t> ind32{0};  // vtable+32
+    std::atomic<uint64_t> ind36{0};  // vtable+36
+    std::atomic<uint64_t> indOther{0};
 };
 inline SceneChainCallCounts g_sceneChainCallCounts;
 inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
@@ -684,11 +698,43 @@ inline void InvokeIndirectJump(uint32_t target, CpuContext* ctx) {
     std::exit(EXIT_FAILURE);
 }
 
+inline void CountIndirectVtableSlot(uint32_t target, CpuContext* cpu) {
+    // Temporary (see lastIndSlot above): recover the vtable slot for
+    // vtable-form calls only; anything else is ignored.
+    if (!cpu || (target & 0xFFFF0000u) != 0x80000000u) {
+        return;
+    }
+    const uint32_t obj = cpu->gpr[3];
+    if (obj < 0x80000000u || obj >= 0xC0000000u) {
+        return;
+    }
+    uint32_t vt = 0;
+    if (!Memory::TryRead32(obj, vt) || vt == 0 || target < vt || target >= vt + 128u) {
+        return;
+    }
+    if ((target & 3u) != 0 || ((target - vt) & 3u) != 0) {
+        return;
+    }
+    const uint32_t slot = target - vt;
+    g_sceneChainCallCounts.lastIndSlot.store(slot, std::memory_order_relaxed);
+    g_sceneChainCallCounts.lastIndTarget.store(target, std::memory_order_relaxed);
+    switch (slot) {
+    case 16: g_sceneChainCallCounts.ind16.fetch_add(1, std::memory_order_relaxed); break;
+    case 20: g_sceneChainCallCounts.ind20.fetch_add(1, std::memory_order_relaxed); break;
+    case 24: g_sceneChainCallCounts.ind24.fetch_add(1, std::memory_order_relaxed); break;
+    case 28: g_sceneChainCallCounts.ind28.fetch_add(1, std::memory_order_relaxed); break;
+    case 32: g_sceneChainCallCounts.ind32.fetch_add(1, std::memory_order_relaxed); break;
+    case 36: g_sceneChainCallCounts.ind36.fetch_add(1, std::memory_order_relaxed); break;
+    default: g_sceneChainCallCounts.indOther.fetch_add(1, std::memory_order_relaxed); break;
+    }
+}
+
 inline void InvokeIndirectCpu(uint32_t target, CpuContext* ctx) {
     CpuContext* cpu = ctx ? ctx : &GetPersistentCpuContext();
     if (target == 0) {
         ReportMissingCpuTarget(target, cpu);
     }
+    CountIndirectVtableSlot(target, cpu);
     ApplyRuntimeCallOptions(target, cpu);
     if (TryDispatchRawCpuTarget(TranslatedFunctionRegistry::FindRawByAddressPtr(target), cpu)) {
         return;
