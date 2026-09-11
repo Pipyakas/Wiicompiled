@@ -40,6 +40,11 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> strapDraw{0};  // 0x80007BC8 StrapScene::draw
     std::atomic<uint64_t> strapEnter{0}; // 0x800074D8 StrapScene::enter
     std::atomic<uint64_t> strapCheck{0}; // 0x800077C8 StrapScene::CheckInput
+    std::atomic<uint64_t> discErr{0};    // 0x80008E74 Run: disc-error print
+    std::atomic<uint64_t> discHalt{0};   // 0x80008E20 Run: DiscCheckThread::halt
+    std::atomic<uint64_t> powState{0};   // 0x8000B26C Run: HandlePowerState
+    std::atomic<uint64_t> sleepTk{0};    // 0x801AACA8 Run: OSSleepTicks
+    std::atomic<uint64_t> unkBAB2C{0};   // 0x801BAB2C Run: gated once-only call
 };
 inline SceneChainCallCounts g_sceneChainCallCounts;
 inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
@@ -57,6 +62,11 @@ inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     case 0x80007BC8u: g_sceneChainCallCounts.strapDraw.fetch_add(1, std::memory_order_relaxed); break;
     case 0x800074D8u: g_sceneChainCallCounts.strapEnter.fetch_add(1, std::memory_order_relaxed); break;
     case 0x800077C8u: g_sceneChainCallCounts.strapCheck.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80008E74u: g_sceneChainCallCounts.discErr.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80008E20u: g_sceneChainCallCounts.discHalt.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8000B26Cu: g_sceneChainCallCounts.powState.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x801AACA8u: g_sceneChainCallCounts.sleepTk.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x801BAB2Cu: g_sceneChainCallCounts.unkBAB2C.fetch_add(1, std::memory_order_relaxed); break;
     default: break;
     }
 }
