@@ -73,6 +73,15 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> dvdErrCb{0};     // 0x8015EE70 cbForStateError
     std::atomic<uint64_t> dvdReady{0};     // 0x80161614 stateReady
     std::atomic<uint64_t> dvdCmdStatus{0}; // 0x80162A88 GetCommandBlockStatus
+    // Run entry object (r3 when target==RKSystem::Run): answers whether
+    // Run's r21 gate base is sSys or a different object.
+    std::atomic<uint64_t> runObj{0};
+    // Last-32 indirect (target, r3) ring: ground truth of the hot dispatch
+    // sequence when slot matching fails. Relaxed, diagnostic only.
+    std::atomic<uint64_t> ringIdx{0};
+    std::atomic<uint64_t> ringT[32]{};
+    std::atomic<uint64_t> ringR[32]{};
+    // sSys vtable snapshot is read in the JNI sampler, not here.
     // Boot-path visits: RipFromDiscImpl -> Main -> RKSystem::Main ->
     // TSystem::Initialize -> RKSystem::Initialize -> DiscCheckThread::create.
     std::atomic<uint64_t> ripImpl{0};    // 0x8000B370
@@ -95,7 +104,12 @@ inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     }
     // Temporary scene-chain counts (see above).
     switch (target) {
-    case 0x8000951Cu: g_sceneChainCallCounts.run.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8000951Cu:
+        g_sceneChainCallCounts.run.fetch_add(1, std::memory_order_relaxed);
+        if (ctx) {
+            g_sceneChainCallCounts.runObj.store(ctx->gpr[3], std::memory_order_relaxed);
+        }
+        break;
     case 0x80009984u: g_sceneChainCallCounts.rkCalc.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8023AE60u: g_sceneChainCallCounts.smCalc.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8023B588u: g_sceneChainCallCounts.calcCur.fetch_add(1, std::memory_order_relaxed); break;
@@ -740,6 +754,14 @@ inline void CountIndirectVtableSlot(uint32_t target, CpuContext* cpu) {
     // targets are counted in ApplyRuntimeCallOptions instead, which every
     // dispatch path (static, direct, indirect) flows through.
     g_sceneChainCallCounts.indTotal.fetch_add(1, std::memory_order_relaxed);
+    // Last-32 (target, r3) ring, unconditional: ground truth of the hot
+    // indirect sequence even when the vtable-slot matcher below rejects.
+    {
+        const uint64_t i =
+            g_sceneChainCallCounts.ringIdx.fetch_add(1, std::memory_order_relaxed) & 31u;
+        g_sceneChainCallCounts.ringT[i].store(target, std::memory_order_relaxed);
+        g_sceneChainCallCounts.ringR[i].store(cpu ? cpu->gpr[3] : 0u, std::memory_order_relaxed);
+    }
     switch (target) {
     case 0x80162B50u:
         g_sceneChainCallCounts.dvdStatus.fetch_add(1, std::memory_order_relaxed);
