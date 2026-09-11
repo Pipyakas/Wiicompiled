@@ -52,6 +52,10 @@ struct SceneChainCallCounts {
     // indirect target (unconditional). Slot counts match *(vt+slot)==target
     // for the slots Run and the scene chain use. Temporary: names which
     // virtuals Run actually reaches. Remove with the GX counters.
+    // NOTE: the vtable-slot matcher stays at zero because the C++ this-call
+    // ABI passes `this` in r3 only for the OUTERMOST call: Run's bodies run
+    // with r3/r21 clobbered by earlier virtual returns, so r3!=obj at nested
+    // sites. The last-32 ring below is the ground-truth sequence instead.
     std::atomic<uint64_t> indTotal{0};
     std::atomic<uint64_t> lastIndSlot{0xFFFFFFFFull};
     std::atomic<uint64_t> lastIndTarget{0};
@@ -95,6 +99,11 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> sysHeap{0};    // 0x8000A5D0 SystemManager heap setup
     std::atomic<uint64_t> loadMap{0};    // 0x8000AC50 LoadMapFile
     std::atomic<uint64_t> ripTask{0};    // 0x8000B610 rip task setup
+    // RipImpl loop steps: task request/exist polls plus thread suspend/resume.
+    std::atomic<uint64_t> taskReq{0};    // 0x80242C18
+    std::atomic<uint64_t> taskExist{0};  // 0x80242C98
+    std::atomic<uint64_t> suspThr{0};    // 0x801AA824
+    std::atomic<uint64_t> resThr{0};     // 0x801AA58C
 };
 inline SceneChainCallCounts g_sceneChainCallCounts;
 inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
@@ -130,6 +139,10 @@ inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     case 0x8000A5D0u: g_sceneChainCallCounts.sysHeap.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000AC50u: g_sceneChainCallCounts.loadMap.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B610u: g_sceneChainCallCounts.ripTask.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80242C18u: g_sceneChainCallCounts.taskReq.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80242C98u: g_sceneChainCallCounts.taskExist.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x801AA824u: g_sceneChainCallCounts.suspThr.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x801AA58Cu: g_sceneChainCallCounts.resThr.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B26Cu: g_sceneChainCallCounts.powState.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801AACA8u: g_sceneChainCallCounts.sleepTk.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801BAB2Cu:
