@@ -73,6 +73,16 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> dvdErrCb{0};     // 0x8015EE70 cbForStateError
     std::atomic<uint64_t> dvdReady{0};     // 0x80161614 stateReady
     std::atomic<uint64_t> dvdCmdStatus{0}; // 0x80162A88 GetCommandBlockStatus
+    // Boot-path visits: RipFromDiscImpl -> Main -> RKSystem::Main ->
+    // TSystem::Initialize -> RKSystem::Initialize -> DiscCheckThread::create.
+    std::atomic<uint64_t> ripImpl{0};    // 0x8000B370
+    std::atomic<uint64_t> rip{0};        // 0x8000B5C8
+    std::atomic<uint64_t> mainB6B0{0};   // 0x8000B6B0
+    std::atomic<uint64_t> mainRK{0};     // 0x80008EF0
+    std::atomic<uint64_t> sysCt{0};      // 0x8000A688
+    std::atomic<uint64_t> rkInit{0};     // 0x80009194
+    std::atomic<uint64_t> tsysInit{0};   // 0x80008FB4
+    std::atomic<uint64_t> discCreate{0}; // 0x80008C10
 };
 inline SceneChainCallCounts g_sceneChainCallCounts;
 inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
@@ -92,6 +102,14 @@ inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     case 0x800077C8u: g_sceneChainCallCounts.strapCheck.fetch_add(1, std::memory_order_relaxed); break;
     case 0x80008E74u: g_sceneChainCallCounts.discErr.fetch_add(1, std::memory_order_relaxed); break;
     case 0x80008E20u: g_sceneChainCallCounts.discHalt.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8000B370u: g_sceneChainCallCounts.ripImpl.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8000B5C8u: g_sceneChainCallCounts.rip.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8000B6B0u: g_sceneChainCallCounts.mainB6B0.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80008EF0u: g_sceneChainCallCounts.mainRK.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8000A688u: g_sceneChainCallCounts.sysCt.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80009194u: g_sceneChainCallCounts.rkInit.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80008FB4u: g_sceneChainCallCounts.tsysInit.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80008C10u: g_sceneChainCallCounts.discCreate.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B26Cu: g_sceneChainCallCounts.powState.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801AACA8u: g_sceneChainCallCounts.sleepTk.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801BAB2Cu:

@@ -165,7 +165,15 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
     uint64_t cDec = g_sceneChainCallCounts.dvdErrCb.load(std::memory_order_relaxed);
     uint64_t cDrd = g_sceneChainCallCounts.dvdReady.load(std::memory_order_relaxed);
     uint64_t cDcs = g_sceneChainCallCounts.dvdCmdStatus.load(std::memory_order_relaxed);
-    char buf[1280];
+    uint64_t cRip = g_sceneChainCallCounts.ripImpl.load(std::memory_order_relaxed);
+    uint64_t cRp2 = g_sceneChainCallCounts.rip.load(std::memory_order_relaxed);
+    uint64_t cMB = g_sceneChainCallCounts.mainB6B0.load(std::memory_order_relaxed);
+    uint64_t cMR = g_sceneChainCallCounts.mainRK.load(std::memory_order_relaxed);
+    uint64_t cSC = g_sceneChainCallCounts.sysCt.load(std::memory_order_relaxed);
+    uint64_t cRI = g_sceneChainCallCounts.rkInit.load(std::memory_order_relaxed);
+    uint64_t cTI = g_sceneChainCallCounts.tsysInit.load(std::memory_order_relaxed);
+    uint64_t cDC = g_sceneChainCallCounts.discCreate.load(std::memory_order_relaxed);
+    char buf[1344];
     std::snprintf(buf, sizeof(buf), "gxbeg=%llu gxend=%llu gxdl=%llu gxfifo=%llu dlbeg=%llu dlend=%llu dlact=%llu"
         " fdraw=%llu frawok=%llu frawfail=%llu fincr=%llu fnull=%llu funk=%llu fbp=%llu fcp=%llu fxf=%llu fib=%llu vrem=%llu fback=%llu nattr=%llu"
         " viadv=%llu vipost=%llu viguard=%llu viret=%llu"
@@ -174,7 +182,8 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         " chain[run=%llu rk=%llu sm=%llu cc=%llu sc=%llu sd=%llu se=%llu sk=%llu"
         " de=%llu dh=%llu ps=%llu st=%llu ub=%llu ub0=%llu ub1=%llu"
         " i16=%llu i20=%llu i24=%llu i28=%llu i32=%llu i36=%llu iO=%llu lS=%llu lT=0x%llx iT=%llu"
-        " r3=0x%llx r21=0x%llx vt=0x%llx dvd=%llu dse=%llu dec=%llu drd=%llu dcs=%llu]",
+        " r3=0x%llx r21=0x%llx vt=0x%llx dvd=%llu dse=%llu dec=%llu drd=%llu dcs=%llu"
+        " boot[rip=%llu rp2=%llu mb=%llu mr=%llu sc=%llu ri=%llu ti=%llu dc=%llu]]",
         (unsigned long long)begins, (unsigned long long)ends,
         (unsigned long long)lists, (unsigned long long)fifoBytes,
         (unsigned long long)dlBegins, (unsigned long long)dlEnds,
@@ -203,7 +212,10 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         (unsigned long long)cR3, (unsigned long long)cR21, (unsigned long long)cVT,
         (unsigned long long)cDvd,
         (unsigned long long)cDse, (unsigned long long)cDec,
-        (unsigned long long)cDrd, (unsigned long long)cDcs);
+        (unsigned long long)cDrd, (unsigned long long)cDcs,
+        (unsigned long long)cRip, (unsigned long long)cRp2, (unsigned long long)cMB,
+        (unsigned long long)cMR, (unsigned long long)cSC, (unsigned long long)cRI,
+        (unsigned long long)cTI, (unsigned long long)cDC);
     // Temporary: one-shot guest thread dump per watchdog sample (logcat THRDUMP
     // lines). Remove with the GX counters.
     OS_HLE_DumpThreadsTemp();
