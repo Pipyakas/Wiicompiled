@@ -83,6 +83,9 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> rkInit{0};     // 0x80009194
     std::atomic<uint64_t> tsysInit{0};   // 0x80008FB4
     std::atomic<uint64_t> discCreate{0}; // 0x80008C10
+    std::atomic<uint64_t> sysHeap{0};    // 0x8000A5D0 SystemManager heap setup
+    std::atomic<uint64_t> loadMap{0};    // 0x8000AC50 LoadMapFile
+    std::atomic<uint64_t> ripTask{0};    // 0x8000B610 rip task setup
 };
 inline SceneChainCallCounts g_sceneChainCallCounts;
 inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
@@ -110,6 +113,9 @@ inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     case 0x80009194u: g_sceneChainCallCounts.rkInit.fetch_add(1, std::memory_order_relaxed); break;
     case 0x80008FB4u: g_sceneChainCallCounts.tsysInit.fetch_add(1, std::memory_order_relaxed); break;
     case 0x80008C10u: g_sceneChainCallCounts.discCreate.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8000A5D0u: g_sceneChainCallCounts.sysHeap.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8000AC50u: g_sceneChainCallCounts.loadMap.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8000B610u: g_sceneChainCallCounts.ripTask.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B26Cu: g_sceneChainCallCounts.powState.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801AACA8u: g_sceneChainCallCounts.sleepTk.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801BAB2Cu:
