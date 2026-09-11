@@ -142,7 +142,10 @@ bool ProcessSleepTimers(CpuContext* cpu)
 
     // Stranded-sleeper reconciler: heals a thread whose park has no pending wake timer (lost to a
     // race) by resuming it once that shape persists for 100ms, sampled every 50ms so no strand is
-    // missed. The atomic CAS below lets exactly one caller run the scan when ProcessSleepTimers
+    // missed. Covers OSSleepTicks parks (gOutstandingParks) AND never-started EGG worker threads:
+    // a worker that reached suspend 0 in READY but was never picked up by SelectThread sits in
+    // exactly the same shape (READY, susp>=1, no timer, fiber alive) and previously waited forever.
+    // The atomic CAS below lets exactly one caller run the scan when ProcessSleepTimers
     // executes on more than one host thread; the rest skip it.
     static std::atomic<Clock::rep> strandScanDueAt{0};
     auto strandScanClaim = strandScanDueAt.load(std::memory_order_relaxed);
@@ -161,6 +164,30 @@ bool ProcessSleepTimers(CpuContext* cpu)
         {
             std::lock_guard<std::mutex> lock(gOutstandingParkMutex);
             outstanding.assign(gOutstandingParks.begin(), gOutstandingParks.end());
+            // Temporary: also sweep every live fiber thread that never started
+            // (EGG TaskThread workers at 0x8042BBF0/0x8042E930/0x804294E4 sit
+            // READY/susp=1 with an unconsumed create-suspend, parked in no
+            // queue, so nothing ever wakes them). Remove with the GX counters
+            // once the black screen is found.
+            for (uint32_t cand : {0x8042E480u, 0x90112660u, 0x8042A680u}) {
+                if (gOutstandingParks.find(cand) != gOutstandingParks.end()) {
+                    continue;
+                }
+                if (!Memory::Contains(cand + kThreadSuspendOffset, sizeof(uint32_t))) {
+                    continue;
+                }
+                if (Fiber::GuestFiberManager::IsTerminated(cand)) {
+                    continue;
+                }
+                const uint16_t st = Memory::Read16(cand + kThreadStateOffset);
+                const int32_t sc =
+                    static_cast<int32_t>(Memory::Read32(cand + kThreadSuspendOffset));
+                if (st == kThreadStateReady && sc >= 1 &&
+                    Memory::Read32(cand + kThreadQueueOffset) == 0 &&
+                    !SleepTimerIsPending(cand)) {
+                    outstanding.push_back(cand);
+                }
+            }
         }
         // Decide who to heal under the lock, but resume OUTSIDE it: the resume
         // re-enters the scheduler and thus this function, and holding the lock
