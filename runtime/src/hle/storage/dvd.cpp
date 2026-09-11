@@ -883,6 +883,16 @@ static bool TryOpenCompressedDisc() {
 // 0x8015EA1C -> DVDInit
 extern "C" void DVDInit_8015EA1C()
 {
+    // The hardware drive queue and the DVD status-gate words below are
+    // re-seeded on EVERY call, not just the first: the translated DVD state
+    // machine (cbForStateError/stateReady, GetDriveStatus's -26004/-26008
+    // gates) legitimately zeroes them during error/ready transitions, and a
+    // seed-once cell that the guest later clears reads as "drive not ready"
+    // forever. The file-index scan stays one-shot via g_dvdInitialized.
+    CompleteDvdCancelState();
+    Memory::Write32(0x80386730u, 0x80343230u);
+    Memory::Write32(0x80386668u, 1);
+    Memory::Write32(0x8038666Cu, 1);
     if (g_dvdInitialized) return;
     // The scan below builds g_fileEntries incrementally, so a re-entrant call
     // must not start a second scan on top of a half-built index and duplicate
@@ -898,21 +908,20 @@ extern "C" void DVDInit_8015EA1C()
     Memory::Write8(0x80386725, 1);   // LowInit called
     Memory::Write32(0x80386720, 0);  // Current context index
     Memory::Write8(0x803866a0, 1);   // DVDInit called flag
-    CompleteDvdCancelState();
     // The hardware drive queue at 0x80343230/38/40/48 keeps the self-linked
-    // empty state InitDvdWaitingQueues seeded above; only the cover/status
-    // words below are touched. The translated DVD state machine busy-waits
-    // on these (cover-wait, drive-state gates), so they are seeded to the
-    // cover-closed/drive-ready values the SDK leaves after a successful
+    // empty state CompleteDvdCancelState seeds on every call above; only the
+    // cover/status words below are touched. The translated DVD state machine
+    // busy-waits on these (cover-wait, drive-state gates), so they are seeded
+    // to the cover-closed/drive-ready values the SDK leaves after a successful
     // cover check instead of the zeros guest RAM starts with.
     Memory::Write32(0x80386660u, 0);
     // DVD::GetDriveStatus gates (r13 = 0x8038CC00): -26004 = 0x8038666C,
     // -26008 = 0x80386668. The first gate reads zero -> early return -1
     // (drive busy); the second reads zero -> early return 8 (not ready).
     // Seed both nonzero (drive idle + ready) so the status walk reaches the
-    // command-block comparison and returns the real state.
-    Memory::Write32(0x80386668u, 1);
-    Memory::Write32(0x8038666Cu, 1);
+    // command-block comparison and returns the real state. (These two plus
+    // the drive queue are re-seeded on every call at the top of this
+    // function; the translated state machine legitimately zeroes them.)
     Memory::Write32(0x80386730u, 0x80343230u);
     Memory::Write32(0x80386760u, 0);
     Memory::Write32(0x80343550u, 0);
