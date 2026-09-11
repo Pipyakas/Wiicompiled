@@ -144,7 +144,9 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
     uint64_t cDh = g_sceneChainCallCounts.discHalt.load(std::memory_order_relaxed);
     uint64_t cPs = g_sceneChainCallCounts.powState.load(std::memory_order_relaxed);
     uint64_t cSt = g_sceneChainCallCounts.sleepTk.load(std::memory_order_relaxed);
-    uint64_t cUb = g_sceneChainCallCounts.unkBAB2C.load(std::memory_order_relaxed);
+    uint64_t cUb = g_sceneChainCallCounts.setBlack.load(std::memory_order_relaxed);
+    uint64_t cUb0 = g_sceneChainCallCounts.setBlack0.load(std::memory_order_relaxed);
+    uint64_t cUb1 = g_sceneChainCallCounts.setBlack1.load(std::memory_order_relaxed);
     char buf[960];
     std::snprintf(buf, sizeof(buf), "gxbeg=%llu gxend=%llu gxdl=%llu gxfifo=%llu dlbeg=%llu dlend=%llu dlact=%llu"
         " fdraw=%llu frawok=%llu frawfail=%llu fincr=%llu fnull=%llu funk=%llu fbp=%llu fcp=%llu fxf=%llu fib=%llu vrem=%llu fback=%llu nattr=%llu"
@@ -152,7 +154,7 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         " stNop=%llu stBp=%llu stCp=%llu stXf=%llu stIndx=%llu stDl=%llu stDraw=%llu stAttr=%llu"
         " bpReg=0x%llx bpBack=%llu"
         " chain[run=%llu rk=%llu sm=%llu cc=%llu sc=%llu sd=%llu se=%llu sk=%llu"
-        " de=%llu dh=%llu ps=%llu st=%llu ub=%llu]",
+        " de=%llu dh=%llu ps=%llu st=%llu ub=%llu ub0=%llu ub1=%llu]",
         (unsigned long long)begins, (unsigned long long)ends,
         (unsigned long long)lists, (unsigned long long)fifoBytes,
         (unsigned long long)dlBegins, (unsigned long long)dlEnds,
@@ -172,7 +174,8 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         (unsigned long long)cCc, (unsigned long long)cSc, (unsigned long long)cSd,
         (unsigned long long)cSe, (unsigned long long)cSk,
         (unsigned long long)cDe, (unsigned long long)cDh, (unsigned long long)cPs,
-        (unsigned long long)cSt, (unsigned long long)cUb);
+        (unsigned long long)cSt, (unsigned long long)cUb,
+        (unsigned long long)cUb0, (unsigned long long)cUb1);
     // Temporary: one-shot guest thread dump per watchdog sample (logcat THRDUMP
     // lines). Remove with the GX counters.
     OS_HLE_DumpThreadsTemp();

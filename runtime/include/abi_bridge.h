@@ -44,7 +44,9 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> discHalt{0};   // 0x80008E20 Run: DiscCheckThread::halt
     std::atomic<uint64_t> powState{0};   // 0x8000B26C Run: HandlePowerState
     std::atomic<uint64_t> sleepTk{0};    // 0x801AACA8 Run: OSSleepTicks
-    std::atomic<uint64_t> unkBAB2C{0};   // 0x801BAB2C Run: gated once-only call
+    std::atomic<uint64_t> setBlack{0};   // 0x801BAB2C Run: VISetBlack (r3!=0:black)
+    std::atomic<uint64_t> setBlack0{0};  // ... with r3==0 (unblack)
+    std::atomic<uint64_t> setBlack1{0};  // ... with r3!=0 (black)
 };
 inline SceneChainCallCounts g_sceneChainCallCounts;
 inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
@@ -66,7 +68,14 @@ inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     case 0x80008E20u: g_sceneChainCallCounts.discHalt.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B26Cu: g_sceneChainCallCounts.powState.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801AACA8u: g_sceneChainCallCounts.sleepTk.fetch_add(1, std::memory_order_relaxed); break;
-    case 0x801BAB2Cu: g_sceneChainCallCounts.unkBAB2C.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x801BAB2Cu:
+        g_sceneChainCallCounts.setBlack.fetch_add(1, std::memory_order_relaxed);
+        if (ctx && ctx->gpr[3] == 0) {
+            g_sceneChainCallCounts.setBlack0.fetch_add(1, std::memory_order_relaxed);
+        } else {
+            g_sceneChainCallCounts.setBlack1.fetch_add(1, std::memory_order_relaxed);
+        }
+        break;
     default: break;
     }
 }
