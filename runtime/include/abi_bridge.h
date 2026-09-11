@@ -705,8 +705,26 @@ inline void InvokeIndirectJump(uint32_t target, CpuContext* ctx) {
 }
 
 inline void CountIndirectVtableSlot(uint32_t target, CpuContext* cpu) {
-    // Temporary (see indTotal above).
+    // Temporary (see indTotal above). Counts every indirect call AND every
+    // resolved-target visit: static MKW_STATIC_TRANSLATED_CALL bodies never
+    // pass through here, but every function they land in still executes its
+    // own body, so tagging the visit here recovers the full chain.
     g_sceneChainCallCounts.indTotal.fetch_add(1, std::memory_order_relaxed);
+    switch (target) {
+    case 0x8000951Cu: g_sceneChainCallCounts.run.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80009984u: g_sceneChainCallCounts.rkCalc.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8023AE60u: g_sceneChainCallCounts.smCalc.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8023B588u: g_sceneChainCallCounts.calcCur.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x800079D0u: g_sceneChainCallCounts.strapCalc.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80007BC8u: g_sceneChainCallCounts.strapDraw.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x800074D8u: g_sceneChainCallCounts.strapEnter.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x800077C8u: g_sceneChainCallCounts.strapCheck.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80008E74u: g_sceneChainCallCounts.discErr.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80008E20u: g_sceneChainCallCounts.discHalt.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8000B26Cu: g_sceneChainCallCounts.powState.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x801AACA8u: g_sceneChainCallCounts.sleepTk.fetch_add(1, std::memory_order_relaxed); break;
+    default: break;
+    }
     if (target != 0) {
         g_sceneChainCallCounts.lastIndTarget.store(target, std::memory_order_relaxed);
     }
