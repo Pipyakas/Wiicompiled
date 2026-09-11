@@ -107,6 +107,8 @@ struct SceneChainCallCounts {
     // DiscCheckThread::create sub-steps: error-object init, resume, message set.
     std::atomic<uint64_t> discErrCt{0};  // 0x80007F7C DiscError::__ct
     std::atomic<uint64_t> discMsg{0};    // 0x80008004 setDiscReadErrorMessage
+    // RipImpl file-load step: DvdRipper::LoadToMainRAM per file.
+    std::atomic<uint64_t> ripLoad{0};    // 0x802226D8
 };
 inline SceneChainCallCounts g_sceneChainCallCounts;
 inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
@@ -148,6 +150,7 @@ inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     case 0x801AA58Cu: g_sceneChainCallCounts.resThr.fetch_add(1, std::memory_order_relaxed); break;
     case 0x80007F7Cu: g_sceneChainCallCounts.discErrCt.fetch_add(1, std::memory_order_relaxed); break;
     case 0x80008004u: g_sceneChainCallCounts.discMsg.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x802226D8u: g_sceneChainCallCounts.ripLoad.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B26Cu: g_sceneChainCallCounts.powState.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801AACA8u: g_sceneChainCallCounts.sleepTk.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801BAB2Cu:
