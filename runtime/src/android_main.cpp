@@ -284,7 +284,10 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
             uint32_t dvdA = 0xFFFFFFFFu, dvdB = 0xFFFFFFFFu, dvdC = 0xFFFFFFFFu;
             uint32_t sVT = 0xFFFFFFFFu, sV16 = 0xFFFFFFFFu, sV20 = 0xFFFFFFFFu;
             uint32_t sV24 = 0xFFFFFFFFu, sV28 = 0xFFFFFFFFu, sV32 = 0xFFFFFFFFu;
-            uint32_t sV36 = 0xFFFFFFFFu;
+            uint32_t sV36 = 0xFFFFFFFFu, sV08 = 0xFFFFFFFFu, sV12 = 0xFFFFFFFFu;
+            uint32_t sV40 = 0xFFFFFFFFu, sV44 = 0xFFFFFFFFu, sV48 = 0xFFFFFFFFu;
+            uint32_t mVT = 0xFFFFFFFFu, mV12 = 0xFFFFFFFFu, mV16 = 0xFFFFFFFFu;
+            uint32_t mV20 = 0xFFFFFFFFu, mV24 = 0xFFFFFFFFu, mV28 = 0xFFFFFFFFu;
             if (Memory::TryRead32(0x80386F60u, sSys) && sSys != 0) {
                 Memory::TryRead32(sSys + 84u, mgr);
                 // RKSystem::Run loop gates (r21 == sSys): +104 frame counter,
@@ -309,23 +312,39 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
                 if (Memory::TryRead32(0x8038CC00u - 26004u, gb)) dvdA = gb;
                 if (Memory::TryRead32(0x8038CC00u - 26008u, gb)) dvdB = gb;
                 if (Memory::TryRead32(0x8038CC00u - 25872u, gb)) dvdC = gb;
-                // sSys vtable slots 16..36: what Run's indirect virtuals
+                // sSys vtable slots 8..48: what Run's indirect virtuals
                 // actually resolve to. Temporary: names the parked virtuals.
+                // mgr (SceneManager) vtable slots 12..28 likewise: the
+                // calcCurrentScene indirection chain (+12 scene, vtable+12).
                 uint32_t vt = 0;
                 if (Memory::TryRead32(sSys, vt) && vt != 0) {
                     sVT = vt;
+                    Memory::TryRead32(vt + 8u, sV08);
+                    Memory::TryRead32(vt + 12u, sV12);
                     Memory::TryRead32(vt + 16u, sV16);
                     Memory::TryRead32(vt + 20u, sV20);
                     Memory::TryRead32(vt + 24u, sV24);
                     Memory::TryRead32(vt + 28u, sV28);
                     Memory::TryRead32(vt + 32u, sV32);
                     Memory::TryRead32(vt + 36u, sV36);
+                    Memory::TryRead32(vt + 40u, sV40);
+                    Memory::TryRead32(vt + 44u, sV44);
+                    Memory::TryRead32(vt + 48u, sV48);
                 }
             }
             if (mgr != 0) {
                 Memory::TryRead32(mgr + 12u, cur);
                 Memory::TryRead32(mgr + 20u, m20);
                 Memory::TryRead32(mgr + 28u, m28);
+                uint32_t mvt = 0;
+                if (Memory::TryRead32(mgr, mvt) && mvt != 0) {
+                    mVT = mvt;
+                    Memory::TryRead32(mvt + 12u, mV12);
+                    Memory::TryRead32(mvt + 16u, mV16);
+                    Memory::TryRead32(mvt + 20u, mV20);
+                    Memory::TryRead32(mvt + 24u, mV24);
+                    Memory::TryRead32(mvt + 28u, mV28);
+                }
             }
             if (cur != 0) {
                 Memory::TryRead32(cur, cvt);
@@ -348,19 +367,21 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
             Memory::TryRead32(0x8042BC3Cu, jb);
             Memory::TryRead32(0x8042BC40u, jc);
             Memory::TryRead32(0x8042BC38u, cj);
-            char sbuf[704];
+            char sbuf[896];
             std::snprintf(sbuf, sizeof(sbuf),
                 " scn[sSys=0x%08X mgr=0x%08X cur=0x%08X calc=0x%08X draw=0x%08X"
                 " 3192=0x%08X 3264=%u 3268=%u 3184=%u m20=%u m28=%u f3276=%u b180=%u b181=%u"
                 " g104=%u g105=%u g106=%u g107=%u g108=%u g81=%u"
                 " dvdA=0x%08X dvdB=0x%08X dvdC=0x%08X"
-                " sVT=0x%08X sV16=0x%08X sV20=0x%08X sV24=0x%08X sV28=0x%08X sV32=0x%08X sV36=0x%08X"
+                " sVT=0x%08X sV08=0x%08X sV12=0x%08X sV16=0x%08X sV20=0x%08X sV24=0x%08X sV28=0x%08X sV32=0x%08X sV36=0x%08X sV40=0x%08X sV44=0x%08X sV48=0x%08X"
+                " mVT=0x%08X mV12=0x%08X mV16=0x%08X mV20=0x%08X mV24=0x%08X mV28=0x%08X"
                 " tq[q0=%u q1=%u base=0x%08X n=%u cur=0x%08X]]",
                 sSys, mgr, cur, calcT, drawT,
                 w3192, w3264, w3268, w3184, m20, m28, b3276, b180, b181,
                 g104, g105, g106, g107, g108, g81,
                 dvdA, dvdB, dvdC,
-                sVT, sV16, sV20, sV24, sV28, sV32, sV36,
+                sVT, sV08, sV12, sV16, sV20, sV24, sV28, sV32, sV36, sV40, sV44, sV48,
+                mVT, mV12, mV16, mV20, mV24, mV28,
                 q0, q1, jb, jc, cj);
             out += sbuf;
         }
