@@ -6,6 +6,7 @@
 
 #include "android_files_dir.h"
 #include "hle_stubs.h"
+#include "memory.h"
 #include "recomp_mod_loader.h"
 #include <aurora/aurora.h>
 #include <aurora/gfx.h>
@@ -145,7 +146,82 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
     // Temporary: one-shot guest thread dump per watchdog sample (logcat THRDUMP
     // lines). Remove with the GX counters.
     OS_HLE_DumpThreadsTemp();
-    return env->NewStringUTF(buf);
+    // Temporary: EGG::Thread dispatch state for the never-starting workers.
+    // Reads the base no-op Run trampoline target (0x8024374C) and, for the
+    // TaskThread objects, the message-queue head: a nonzero queue with a
+    // parked worker means jobs were queued but the worker never ran. Remove
+    // with the GX counters.
+    {
+        char tbuf[256];
+        uint32_t runTarget = 0;
+        if (Memory::TryRead32(0x802A3FC0u + 12u, runTarget)) {
+            std::snprintf(tbuf, sizeof(tbuf), " eggRun=0x%08X", runTarget);
+        } else {
+            std::snprintf(tbuf, sizeof(tbuf), " eggRun=?");
+        }
+        std::string out(buf);
+        out += tbuf;
+        for (uint32_t obj : {0x8042BBF0u, 0x8042E930u, 0x804294E4u}) {
+            uint32_t qHead = 0, curJob = 0, v = 0, run = 0;
+            Memory::TryRead32(obj, v);
+            Memory::TryRead32(v + 12u, run);
+            Memory::TryRead32(obj + 0x0Cu, qHead);
+            Memory::TryRead32(obj + 0x48u, curJob);
+            char ebuf[128];
+            std::snprintf(ebuf, sizeof(ebuf), " t%08X[v=0x%08X run=0x%08X q=0x%08X cur=0x%08X]",
+                obj, v, run, qHead, curJob);
+            out += ebuf;
+        }
+        // Scene chain: sSystem -> +84 SceneMgr -> +12 current scene ->
+        // vtable calc/draw targets + strap gate words, plus TaskThread queue
+        // depth (head-count + current job) for the strap worker: jobs queued
+        // but a parked worker means the worker never ran. Remove with the GX
+        // counters.
+        {
+            uint32_t sSys = 0, mgr = 0, cur = 0, cvt = 0, calcT = 0, drawT = 0;
+            uint32_t w3192 = 0, w3264 = 0, w3268 = 0, w3184 = 0, m20 = 0, m28 = 0;
+            uint32_t b3276 = 0, b180 = 0, b181 = 0;
+            if (Memory::TryRead32(0x80386F60u, sSys) && sSys != 0) {
+                Memory::TryRead32(sSys + 84u, mgr);
+            }
+            if (mgr != 0) {
+                Memory::TryRead32(mgr + 12u, cur);
+                Memory::TryRead32(mgr + 20u, m20);
+                Memory::TryRead32(mgr + 28u, m28);
+            }
+            if (cur != 0) {
+                Memory::TryRead32(cur, cvt);
+                Memory::TryRead32(cvt + 12u, calcT);
+                Memory::TryRead32(cvt + 16u, drawT);
+                Memory::TryRead32(cur + 3192u, w3192);
+                Memory::TryRead32(cur + 3264u, w3264);
+                Memory::TryRead32(cur + 3268u, w3268);
+                Memory::TryRead32(cur + 3184u, w3184);
+                uint32_t b = 0;
+                if (Memory::TryRead32(cur + 3276u, b)) b3276 = b & 0xFFu;
+                if (Memory::TryRead32(cur + 180u, b)) b180 = b & 0xFFu;
+                if (Memory::TryRead32(cur + 181u, b)) b181 = b & 0xFFu;
+            }
+            // Strap worker (obj 0x8042BBF0): +12 queue head/count words, +76
+            // job ring base, +80 job count, +48 current job.
+            uint32_t q0 = 0, q1 = 0, jb = 0, jc = 0, cj = 0;
+            Memory::TryRead32(0x8042BBFCu, q0);
+            Memory::TryRead32(0x8042BC00u, q1);
+            Memory::TryRead32(0x8042BC3Cu, jb);
+            Memory::TryRead32(0x8042BC40u, jc);
+            Memory::TryRead32(0x8042BC38u, cj);
+            char sbuf[384];
+            std::snprintf(sbuf, sizeof(sbuf),
+                " scn[sSys=0x%08X mgr=0x%08X cur=0x%08X calc=0x%08X draw=0x%08X"
+                " 3192=0x%08X 3264=%u 3268=%u 3184=%u m20=%u m28=%u f3276=%u b180=%u b181=%u"
+                " tq[q0=%u q1=%u base=0x%08X n=%u cur=0x%08X]]",
+                sSys, mgr, cur, calcT, drawT,
+                w3192, w3264, w3268, w3184, m20, m28, b3276, b180, b181,
+                q0, q1, jb, jc, cj);
+            out += sbuf;
+        }
+        return env->NewStringUTF(out.c_str());
+    }
 }
 
 static uint32_t g_discGameCode = 0;

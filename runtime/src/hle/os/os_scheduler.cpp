@@ -580,11 +580,18 @@ void OS_HLE_DumpThreadsTemp() {
             const uint32_t queue = ::Memory::Read32(it + kThreadQueueOffset);
             const uint32_t cur = (it == ::Memory::Read32(kOSCurrentContextAddr)) ? 1u : 0u;
             const uint32_t run = (it == ::Memory::Read32(kOSRunningContextAddr)) ? 1u : 0u;
+            // Temporary: fiber presence distinguishes "thread suspended" from
+            // "fiber bookkeeping lost the thread". Remove with the GX counters.
+            const bool hasFiber = Fiber::GuestFiberManager::IsInitialized()
+                && Fiber::GuestFiberManager::HasFiber(it);
+            const bool fiberTerm = hasFiber
+                && Fiber::GuestFiberManager::IsTerminated(it);
             RT_LOG(RT_TAG_OS) << "THRDUMP thr=0x" << std::hex << it << std::dec
                       << " st=" << (state < 9 ? kStateName[state] : "?") << "(" << state << ")"
                       << " susp=" << susp << " prio=" << prio << " base=" << effPrio
                       << " srr0=0x" << std::hex << srr0 << " lr=0x" << lr
                       << " q=0x" << queue << std::dec
+                      << " fib=" << (hasFiber ? (fiberTerm ? "T" : "Y") : "n")
                       << (cur ? " CUR" : "") << (run ? " RUN" : "") << std::endl;
         }
         RT_LOG(RT_TAG_OS) << "THRDUMP idle=" << ::Memory::Read32(kSchedulerIdleFlagAddr)

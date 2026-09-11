@@ -269,6 +269,37 @@ extern "C" void OSCreateThread_HLE_801a9e84(CpuContext* ctx)
         cpu->gpr[3] = 0; // Return failure
         return;
     }
+
+    // Temporary: log thread creation and EGG::Thread dispatch detail (entry
+    // func, Thread-object arg, resolved Run target; EntryArg vs the OS thread
+    // word the trampoline reads at +8 disambiguates "wrong arg" from "stale
+    // vtable"). Boot creates only a few dozen; rate-limit anyway. Remove with
+    // the GX counters once the black screen is found.
+    {
+        static std::atomic<int> s_createLogCount{0};
+        if (s_createLogCount.fetch_add(1, std::memory_order_relaxed) < 48) {
+            RT_LOG(RT_TAG_OS) << "OSCreateThread: thr=0x" << std::hex << threadPtr
+                      << " entry=0x" << entryFunc << " arg=0x" << entryArg
+                      << std::dec << " prio=" << priority
+                      << " attr=" << attributes << std::endl;
+            if (entryFunc == 0x8024373Cu) {
+                try {
+                    const uint32_t vtbl = ::Memory::Read32(entryArg);
+                    uint32_t runTarget = 0;
+                    if (::Memory::Contains(vtbl + 12u, 4u)) {
+                        runTarget = ::Memory::Read32(vtbl + 12u);
+                    }
+                    RT_LOG(RT_TAG_OS) << "OSCreateThread: thr=0x" << std::hex << threadPtr
+                              << " arg=0x" << entryArg << " vtbl=0x" << vtbl
+                              << " runTarget=0x" << runTarget
+                              << " thread+8=0x" << ::Memory::Read32(entryArg + 8u)
+                              << " thread+12=0x" << ::Memory::Read32(entryArg + 12u)
+                              << std::dec << std::endl;
+                } catch (const ::Memory::AccessViolation&) {
+                }
+            }
+        }
+    }
     
     // Create the guest fiber
     if (Fiber::GuestFiberManager::IsInitialized()) {
@@ -640,6 +671,17 @@ extern "C" void OSResumeThread_HLE_801aa58c(CpuContext* ctx)
             if (newSuspend == 0) {
                 CancelSleepTimer(threadPtr);
                 ClearOutstandingPark(threadPtr);
+                // Temporary: log every resume-to-zero (see OSCreateThread log
+                // above) to see which created threads actually start. Remove
+                // with the GX counters once the black screen is found.
+                {
+                    static std::atomic<int> s_resumeLogCount{0};
+                    if (s_resumeLogCount.fetch_add(1, std::memory_order_relaxed) < 96) {
+                        const uint16_t resumeState = ::Memory::Read16(threadPtr + 0x2C8u);
+                        RT_LOG(RT_TAG_OS) << "OSResumeThread: thr=0x" << std::hex << threadPtr
+                                  << std::dec << " susp->0 state=" << resumeState << std::endl;
+                    }
+                }
                 const uint16_t state = ::Memory::Read16(threadPtr + 0x2C8u);
 
                 if (state == kThreadStateWaiting) {
