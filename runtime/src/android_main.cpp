@@ -282,6 +282,9 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
             uint32_t g104 = 0xFFFFFFFFu, g105 = 0xFFFFFFFFu, g106 = 0xFFFFFFFFu;
             uint32_t g107 = 0xFFFFFFFFu, g108 = 0xFFFFFFFFu, g81 = 0xFFFFFFFFu;
             uint32_t dvdA = 0xFFFFFFFFu, dvdB = 0xFFFFFFFFu, dvdC = 0xFFFFFFFFu;
+            uint32_t sVT = 0xFFFFFFFFu, sV16 = 0xFFFFFFFFu, sV20 = 0xFFFFFFFFu;
+            uint32_t sV24 = 0xFFFFFFFFu, sV28 = 0xFFFFFFFFu, sV32 = 0xFFFFFFFFu;
+            uint32_t sV36 = 0xFFFFFFFFu;
             if (Memory::TryRead32(0x80386F60u, sSys) && sSys != 0) {
                 Memory::TryRead32(sSys + 84u, mgr);
                 // RKSystem::Run loop gates (r21 == sSys): +104 frame counter,
@@ -306,6 +309,18 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
                 if (Memory::TryRead32(0x8038CC00u - 26004u, gb)) dvdA = gb;
                 if (Memory::TryRead32(0x8038CC00u - 26008u, gb)) dvdB = gb;
                 if (Memory::TryRead32(0x8038CC00u - 25872u, gb)) dvdC = gb;
+                // sSys vtable slots 16..36: what Run's indirect virtuals
+                // actually resolve to. Temporary: names the parked virtuals.
+                uint32_t vt = 0;
+                if (Memory::TryRead32(sSys, vt) && vt != 0) {
+                    sVT = vt;
+                    Memory::TryRead32(vt + 16u, sV16);
+                    Memory::TryRead32(vt + 20u, sV20);
+                    Memory::TryRead32(vt + 24u, sV24);
+                    Memory::TryRead32(vt + 28u, sV28);
+                    Memory::TryRead32(vt + 32u, sV32);
+                    Memory::TryRead32(vt + 36u, sV36);
+                }
             }
             if (mgr != 0) {
                 Memory::TryRead32(mgr + 12u, cur);
@@ -333,17 +348,19 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
             Memory::TryRead32(0x8042BC3Cu, jb);
             Memory::TryRead32(0x8042BC40u, jc);
             Memory::TryRead32(0x8042BC38u, cj);
-            char sbuf[576];
+            char sbuf[704];
             std::snprintf(sbuf, sizeof(sbuf),
                 " scn[sSys=0x%08X mgr=0x%08X cur=0x%08X calc=0x%08X draw=0x%08X"
                 " 3192=0x%08X 3264=%u 3268=%u 3184=%u m20=%u m28=%u f3276=%u b180=%u b181=%u"
                 " g104=%u g105=%u g106=%u g107=%u g108=%u g81=%u"
                 " dvdA=0x%08X dvdB=0x%08X dvdC=0x%08X"
+                " sVT=0x%08X sV16=0x%08X sV20=0x%08X sV24=0x%08X sV28=0x%08X sV32=0x%08X sV36=0x%08X"
                 " tq[q0=%u q1=%u base=0x%08X n=%u cur=0x%08X]]",
                 sSys, mgr, cur, calcT, drawT,
                 w3192, w3264, w3268, w3184, m20, m28, b3276, b180, b181,
                 g104, g105, g106, g107, g108, g81,
                 dvdA, dvdB, dvdC,
+                sVT, sV16, sV20, sV24, sV28, sV32, sV36,
                 q0, q1, jb, jc, cj);
             out += sbuf;
         }
