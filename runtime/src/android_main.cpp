@@ -186,8 +186,19 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
             uint32_t sSys = 0, mgr = 0, cur = 0, cvt = 0, calcT = 0, drawT = 0;
             uint32_t w3192 = 0, w3264 = 0, w3268 = 0, w3184 = 0, m20 = 0, m28 = 0;
             uint32_t b3276 = 0, b180 = 0, b181 = 0;
+            uint32_t g104 = 0xFFFFFFFFu, g105 = 0xFFFFFFFFu, g106 = 0xFFFFFFFFu;
+            uint32_t g107 = 0xFFFFFFFFu, g108 = 0xFFFFFFFFu;
             if (Memory::TryRead32(0x80386F60u, sSys) && sSys != 0) {
                 Memory::TryRead32(sSys + 84u, mgr);
+                // RKSystem::Run loop gates (r21 == sSys): +104 frame counter,
+                // +105 paired flag, +106/+107 computed enables, +108 exit
+                // code. Temporary: which gate holds the scene work closed.
+                uint32_t gb = 0;
+                if (Memory::TryRead32(sSys + 104u, gb)) g104 = gb & 0xFFu;
+                if (Memory::TryRead32(sSys + 105u, gb)) g105 = gb & 0xFFu;
+                if (Memory::TryRead32(sSys + 106u, gb)) g106 = gb & 0xFFu;
+                if (Memory::TryRead32(sSys + 107u, gb)) g107 = gb & 0xFFu;
+                if (Memory::TryRead32(sSys + 108u, gb)) g108 = gb & 0xFFu;
             }
             if (mgr != 0) {
                 Memory::TryRead32(mgr + 12u, cur);
@@ -215,13 +226,15 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
             Memory::TryRead32(0x8042BC3Cu, jb);
             Memory::TryRead32(0x8042BC40u, jc);
             Memory::TryRead32(0x8042BC38u, cj);
-            char sbuf[384];
+            char sbuf[448];
             std::snprintf(sbuf, sizeof(sbuf),
                 " scn[sSys=0x%08X mgr=0x%08X cur=0x%08X calc=0x%08X draw=0x%08X"
                 " 3192=0x%08X 3264=%u 3268=%u 3184=%u m20=%u m28=%u f3276=%u b180=%u b181=%u"
+                " g104=%u g105=%u g106=%u g107=%u g108=%u"
                 " tq[q0=%u q1=%u base=0x%08X n=%u cur=0x%08X]]",
                 sSys, mgr, cur, calcT, drawT,
                 w3192, w3264, w3268, w3184, m20, m28, b3276, b180, b181,
+                g104, g105, g106, g107, g108,
                 q0, q1, jb, jc, cj);
             out += sbuf;
         }
