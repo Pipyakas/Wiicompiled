@@ -55,6 +55,11 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> indTotal{0};
     std::atomic<uint64_t> lastIndSlot{0xFFFFFFFFull};
     std::atomic<uint64_t> lastIndTarget{0};
+    // Last indirect call context for matcher diagnosis: r3/r21/vt as seen
+    // at InvokeIndirectCpu time (unconditional, overwritten each call).
+    std::atomic<uint64_t> lastIndR3{0};
+    std::atomic<uint64_t> lastIndR21{0};
+    std::atomic<uint64_t> lastIndVT{0xFFFFFFFFull};
     std::atomic<uint64_t> ind16{0};  // vtable+16 (first Run virtual)
     std::atomic<uint64_t> ind20{0};  // vtable+20
     std::atomic<uint64_t> ind24{0};  // vtable+24 (SceneManager-slot-ish)
@@ -704,6 +709,23 @@ inline void CountIndirectVtableSlot(uint32_t target, CpuContext* cpu) {
     g_sceneChainCallCounts.indTotal.fetch_add(1, std::memory_order_relaxed);
     if (target != 0) {
         g_sceneChainCallCounts.lastIndTarget.store(target, std::memory_order_relaxed);
+    }
+    if (cpu) {
+        g_sceneChainCallCounts.lastIndR3.store(cpu->gpr[3], std::memory_order_relaxed);
+        g_sceneChainCallCounts.lastIndR21.store(cpu->gpr[21], std::memory_order_relaxed);
+        uint32_t vtDbg = 0xFFFFFFFFu;
+        const uint32_t objDbg = cpu->gpr[3];
+        if (objDbg >= 0x80000000u && objDbg < 0xC0000000u) {
+            uint32_t v = 0;
+            if (Memory::TryRead32(objDbg, v)) {
+                vtDbg = v;
+            } else {
+                vtDbg = 0xFFFFFFFEu;
+            }
+        } else {
+            vtDbg = 0xFFFFFFFDu;
+        }
+        g_sceneChainCallCounts.lastIndVT.store(vtDbg, std::memory_order_relaxed);
     }
     if (!cpu || target < 0x80000000u || target >= 0x80840000u) {
         return;
