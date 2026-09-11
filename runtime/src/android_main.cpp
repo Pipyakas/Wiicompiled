@@ -161,7 +161,11 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
     uint64_t cR21 = g_sceneChainCallCounts.lastIndR21.load(std::memory_order_relaxed);
     uint64_t cVT = g_sceneChainCallCounts.lastIndVT.load(std::memory_order_relaxed);
     uint64_t cDvd = g_sceneChainCallCounts.dvdStatus.load(std::memory_order_relaxed);
-    char buf[1216];
+    uint64_t cDse = g_sceneChainCallCounts.dvdStoreErr.load(std::memory_order_relaxed);
+    uint64_t cDec = g_sceneChainCallCounts.dvdErrCb.load(std::memory_order_relaxed);
+    uint64_t cDrd = g_sceneChainCallCounts.dvdReady.load(std::memory_order_relaxed);
+    uint64_t cDcs = g_sceneChainCallCounts.dvdCmdStatus.load(std::memory_order_relaxed);
+    char buf[1280];
     std::snprintf(buf, sizeof(buf), "gxbeg=%llu gxend=%llu gxdl=%llu gxfifo=%llu dlbeg=%llu dlend=%llu dlact=%llu"
         " fdraw=%llu frawok=%llu frawfail=%llu fincr=%llu fnull=%llu funk=%llu fbp=%llu fcp=%llu fxf=%llu fib=%llu vrem=%llu fback=%llu nattr=%llu"
         " viadv=%llu vipost=%llu viguard=%llu viret=%llu"
@@ -170,7 +174,7 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         " chain[run=%llu rk=%llu sm=%llu cc=%llu sc=%llu sd=%llu se=%llu sk=%llu"
         " de=%llu dh=%llu ps=%llu st=%llu ub=%llu ub0=%llu ub1=%llu"
         " i16=%llu i20=%llu i24=%llu i28=%llu i32=%llu i36=%llu iO=%llu lS=%llu lT=0x%llx iT=%llu"
-        " r3=0x%llx r21=0x%llx vt=0x%llx dvd=%llu]",
+        " r3=0x%llx r21=0x%llx vt=0x%llx dvd=%llu dse=%llu dec=%llu drd=%llu dcs=%llu]",
         (unsigned long long)begins, (unsigned long long)ends,
         (unsigned long long)lists, (unsigned long long)fifoBytes,
         (unsigned long long)dlBegins, (unsigned long long)dlEnds,
@@ -197,7 +201,9 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         (unsigned long long)cIO, (unsigned long long)cLS, (unsigned long long)cLT,
         (unsigned long long)cIT,
         (unsigned long long)cR3, (unsigned long long)cR21, (unsigned long long)cVT,
-        (unsigned long long)cDvd);
+        (unsigned long long)cDvd,
+        (unsigned long long)cDse, (unsigned long long)cDec,
+        (unsigned long long)cDrd, (unsigned long long)cDcs);
     // Temporary: one-shot guest thread dump per watchdog sample (logcat THRDUMP
     // lines). Remove with the GX counters.
     OS_HLE_DumpThreadsTemp();
