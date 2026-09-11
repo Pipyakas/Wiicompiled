@@ -300,16 +300,20 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
                 // code; +81 (via sStatic+81) selects the disc-error print vs
                 // scene-continue branch each iteration. Temporary: which gate
                 // holds the scene work closed.
+                // NOTE: guest is big-endian; a 32-bit word read at addr N
+                // holds bytes N..N+3 with N in the HIGH byte. +104's byte is
+                // bits 31..24, +105 is bits 23..16, etc.
                 uint32_t gb = 0;
-                if (Memory::TryRead32(sSys + 104u, gb)) g104 = gb & 0xFFu;
-                if (Memory::TryRead32(sSys + 105u, gb)) g105 = gb & 0xFFu;
-                if (Memory::TryRead32(sSys + 106u, gb)) g106 = gb & 0xFFu;
-                if (Memory::TryRead32(sSys + 107u, gb)) g107 = gb & 0xFFu;
-                if (Memory::TryRead32(sSys + 108u, gb)) g108 = gb & 0xFFu;
+                if (Memory::TryRead32(sSys + 104u, gb)) g104 = (gb >> 24) & 0xFFu;
+                if (Memory::TryRead32(sSys + 104u, gb)) g105 = (gb >> 16) & 0xFFu;
+                if (Memory::TryRead32(sSys + 104u, gb)) g106 = (gb >> 8) & 0xFFu;
+                if (Memory::TryRead32(sSys + 104u, gb)) g107 = gb & 0xFFu;
+                if (Memory::TryRead32(sSys + 108u, gb)) g108 = (gb >> 24) & 0xFFu;
                 // sStatic lives at r13-27712; r13 (SDA1) is 0x8038CC00.
+                // +81 is the 2nd byte of the word at +80.
                 uint32_t sStatic = 0;
                 if (Memory::TryRead32(0x8038CC00u - 27712u, sStatic) && sStatic != 0) {
-                    if (Memory::TryRead32(sStatic + 81u, gb)) g81 = gb & 0xFFu;
+                    if (Memory::TryRead32(sStatic + 80u, gb)) g81 = (gb >> 16) & 0xFFu;
                 }
                 // DVD::GetDriveStatus inputs (r13-relative): -26004 nonzero
                 // gate, -26008 second gate, -25872 pointer gate. Temporary:
@@ -360,9 +364,9 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
                 Memory::TryRead32(cur + 3268u, w3268);
                 Memory::TryRead32(cur + 3184u, w3184);
                 uint32_t b = 0;
-                if (Memory::TryRead32(cur + 3276u, b)) b3276 = b & 0xFFu;
-                if (Memory::TryRead32(cur + 180u, b)) b180 = b & 0xFFu;
-                if (Memory::TryRead32(cur + 181u, b)) b181 = b & 0xFFu;
+                if (Memory::TryRead32(cur + 3276u, b)) b3276 = (b >> 24) & 0xFFu;
+                if (Memory::TryRead32(cur + 180u, b)) b180 = (b >> 24) & 0xFFu;
+                if (Memory::TryRead32(cur + 180u, b)) b181 = (b >> 16) & 0xFFu;
             }
             // Strap worker (obj 0x8042BBF0): +12 queue head/count words, +76
             // job ring base, +80 job count, +48 current job.
