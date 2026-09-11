@@ -100,30 +100,36 @@ public class GameActivity extends SDLActivity implements SensorEventListener {
     private void startPcHistogram() {
         new Thread(() -> {
             try { Thread.sleep(45000); } catch (InterruptedException ignored) { return; }
-            java.util.HashMap<Integer,Integer> hist = new java.util.HashMap<>();
-            for (int i = 0; i < 1200; i++) {
-                try { Thread.sleep(50); } catch (InterruptedException ignored) { return; }
-                int pc = 0;
-                try { pc = nativeGetGuestExecutionAddress(); } catch (Throwable ignored) { return; }
-                hist.put(pc, hist.getOrDefault(pc, 0) + 1);
-            }
-            java.util.ArrayList<java.util.Map.Entry<Integer,Integer>> es = new java.util.ArrayList<>(hist.entrySet());
-            es.sort((a,b) -> b.getValue() - a.getValue());
-            // Full histogram in chunks (logcat truncates long lines): every
-            // distinct PC matters, not just the top — StrapScene::calc's
-            // indirect targets may sit at low counts.
-            StringBuilder sb = new StringBuilder("pchist n=" + es.size());
-            for (int i = 0; i < es.size(); i++) {
-                sb.append(String.format(" 0x%08X=%d", es.get(i).getKey(), es.get(i).getValue()));
-                if ((i + 1) % 12 == 0 || i + 1 == es.size()) {
-                    Log.i(TAG, sb.toString());
-                    sb = new StringBuilder("pchist+:");
+            // Repeat 4x (one 60s window every ~75s): round 1 lands pre-strap
+            // (baseline), rounds 2-4 land across the strap window and catch
+            // StrapScene::enter/calc/draw/check even on slow boots.
+            for (int round = 0; round < 4; round++) {
+                java.util.HashMap<Integer,Integer> hist = new java.util.HashMap<>();
+                for (int i = 0; i < 1200; i++) {
+                    try { Thread.sleep(50); } catch (Throwable ignored) { return; }
+                    int pc = 0;
+                    try { pc = nativeGetGuestExecutionAddress(); } catch (Throwable ignored) { return; }
+                    hist.put(pc, hist.getOrDefault(pc, 0) + 1);
                 }
+                java.util.ArrayList<java.util.Map.Entry<Integer,Integer>> es = new java.util.ArrayList<>(hist.entrySet());
+                es.sort((a,b) -> b.getValue() - a.getValue());
+                // Full histogram in chunks (logcat truncates long lines): every
+                // distinct PC matters, not just the top — StrapScene::calc's
+                // indirect targets may sit at low counts.
+                StringBuilder sb = new StringBuilder("pchist" + round + " n=" + es.size());
+                for (int i = 0; i < es.size(); i++) {
+                    sb.append(String.format(" 0x%08X=%d", es.get(i).getKey(), es.get(i).getValue()));
+                    if ((i + 1) % 12 == 0 || i + 1 == es.size()) {
+                        Log.i(TAG, sb.toString());
+                        sb = new StringBuilder("pchist" + round + "+:");
+                    }
+                }
+                // Explicit zero-confirmation for the scene functions of interest.
+                Log.i(TAG, String.format("pchist" + round + "? calc(0x800079D0)=%d draw(0x80007BC8)=%d enter(0x800074D8)=%d check(0x800077C8)=%d",
+                    hist.getOrDefault(0x800079D0, 0), hist.getOrDefault(0x80007BC8, 0),
+                    hist.getOrDefault(0x800074D8, 0), hist.getOrDefault(0x800077C8, 0)));
+                try { Thread.sleep(15000); } catch (InterruptedException ignored) { return; }
             }
-            // Explicit zero-confirmation for the scene functions of interest.
-            Log.i(TAG, String.format("pchist? calc(0x800079D0)=%d draw(0x80007BC8)=%d enter(0x800074D8)=%d check(0x800077C8)=%d",
-                hist.getOrDefault(0x800079D0, 0), hist.getOrDefault(0x80007BC8, 0),
-                hist.getOrDefault(0x800074D8, 0), hist.getOrDefault(0x800077C8, 0)));
         }, "PcHistogram").start();
     }
 
