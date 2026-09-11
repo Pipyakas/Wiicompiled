@@ -181,6 +181,8 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
     uint64_t cTE = g_sceneChainCallCounts.taskExist.load(std::memory_order_relaxed);
     uint64_t cSU = g_sceneChainCallCounts.suspThr.load(std::memory_order_relaxed);
     uint64_t cRE = g_sceneChainCallCounts.resThr.load(std::memory_order_relaxed);
+    uint64_t cEC = g_sceneChainCallCounts.discErrCt.load(std::memory_order_relaxed);
+    uint64_t cDM = g_sceneChainCallCounts.discMsg.load(std::memory_order_relaxed);
     // Last-8 indirect ring (newest last): target + r3 pairs, unconditional.
     uint64_t rIdx = g_sceneChainCallCounts.ringIdx.load(std::memory_order_relaxed);
     char rbuf[512];
@@ -210,7 +212,7 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         " i16=%llu i20=%llu i24=%llu i28=%llu i32=%llu i36=%llu iO=%llu lS=%llu lT=0x%llx iT=%llu"
         " r3=0x%llx r21=0x%llx vt=0x%llx dvd=%llu dse=%llu dec=%llu drd=%llu dcs=%llu"
         " boot[rip=%llu rp2=%llu mb=%llu mr=%llu sc=%llu ri=%llu ti=%llu dc=%llu"
-        " sh=%llu lm=%llu rt=%llu runObj=0x%llx tq=%llu te=%llu su=%llu re=%llu]] %s",
+        " sh=%llu lm=%llu rt=%llu runObj=0x%llx tq=%llu te=%llu su=%llu re=%llu ec=%llu dm=%llu]] %s",
         (unsigned long long)begins, (unsigned long long)ends,
         (unsigned long long)lists, (unsigned long long)fifoBytes,
         (unsigned long long)dlBegins, (unsigned long long)dlEnds,
@@ -245,7 +247,8 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         (unsigned long long)cTI, (unsigned long long)cDC,
         (unsigned long long)cSH, (unsigned long long)cLM, (unsigned long long)cRT,
         (unsigned long long)cRO, (unsigned long long)cTQ, (unsigned long long)cTE,
-        (unsigned long long)cSU, (unsigned long long)cRE, rbuf);
+        (unsigned long long)cSU, (unsigned long long)cRE,
+        (unsigned long long)cEC, (unsigned long long)cDM, rbuf);
     // Temporary: one-shot guest thread dump per watchdog sample (logcat THRDUMP
     // lines). Remove with the GX counters.
     OS_HLE_DumpThreadsTemp();
