@@ -906,7 +906,12 @@ extern "C" void DVDInit_8015EA1C()
     // cover-closed/drive-ready values the SDK leaves after a successful
     // cover check instead of the zeros guest RAM starts with.
     Memory::Write32(0x80386660u, 0);
-    Memory::Write32(0x80386668u, 0);
+    // DVD::GetDriveStatus gates (r13 = 0x8038CC00): -26004 = 0x8038666C,
+    // -26008 = 0x80386668. The first gate reads zero -> early return -1
+    // (drive busy); the second reads zero -> early return 8 (not ready).
+    // Seed both nonzero (drive idle + ready) so the status walk reaches the
+    // command-block comparison and returns the real state.
+    Memory::Write32(0x80386668u, 1);
     Memory::Write32(0x8038666Cu, 1);
     Memory::Write32(0x80386730u, 0x80343230u);
     Memory::Write32(0x80386760u, 0);
