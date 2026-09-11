@@ -115,6 +115,10 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> ripD{0};       // 0x8022277C LoadToMainRAM sub-step
     std::atomic<uint64_t> dvdRead{0};    // 0x8015E834 DVDReadPrio (async rip read)
     std::atomic<uint64_t> dvdMsg{0};     // 0x801A1600 OS message (rip completion)
+    // Option-switch setter for the Run gates (0x80096970, +102..+108 byte
+    // fields incl. +105/+106/+108): counts whether anything ever reconfigures
+    // the gates after __sinit set +105=0/+104=1.
+    std::atomic<uint64_t> optSet{0};     // 0x80096970
 };
 inline SceneChainCallCounts g_sceneChainCallCounts;
 inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
@@ -163,6 +167,7 @@ inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     case 0x8022277Cu: g_sceneChainCallCounts.ripD.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8015E834u: g_sceneChainCallCounts.dvdRead.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801A1600u: g_sceneChainCallCounts.dvdMsg.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80096970u: g_sceneChainCallCounts.optSet.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B26Cu: g_sceneChainCallCounts.powState.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801AACA8u: g_sceneChainCallCounts.sleepTk.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801BAB2Cu:
