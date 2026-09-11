@@ -47,11 +47,12 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> setBlack{0};   // 0x801BAB2C Run: VISetBlack (r3!=0:black)
     std::atomic<uint64_t> setBlack0{0};  // ... with r3==0 (unblack)
     std::atomic<uint64_t> setBlack1{0};  // ... with r3!=0 (black)
-    // Last vtable slot invoked through InvokeIndirectCpu (slot = target -
-    // *r3 when r3 points at a guest object whose first word is a vtable and
-    // the target falls within vt+128; 0xFFFFFFFF = none yet) plus hit counts
-    // per Run vtable slot. Temporary: names which virtuals Run actually
-    // reaches. Remove with the GX counters.
+    // Indirect-call visibility (all vtable-form or not). indTotal counts
+    // every InvokeIndirectCpu; lastIndTarget is the most recent nonzero
+    // indirect target (unconditional). Slot counts match *(vt+slot)==target
+    // for the slots Run and the scene chain use. Temporary: names which
+    // virtuals Run actually reaches. Remove with the GX counters.
+    std::atomic<uint64_t> indTotal{0};
     std::atomic<uint64_t> lastIndSlot{0xFFFFFFFFull};
     std::atomic<uint64_t> lastIndTarget{0};
     std::atomic<uint64_t> ind16{0};  // vtable+16 (first Run virtual)
@@ -699,9 +700,12 @@ inline void InvokeIndirectJump(uint32_t target, CpuContext* ctx) {
 }
 
 inline void CountIndirectVtableSlot(uint32_t target, CpuContext* cpu) {
-    // Temporary (see lastIndSlot above): recover the vtable slot for
-    // vtable-form calls only; anything else is ignored.
-    if (!cpu || (target & 0xFFFF0000u) != 0x80000000u) {
+    // Temporary (see indTotal above).
+    g_sceneChainCallCounts.indTotal.fetch_add(1, std::memory_order_relaxed);
+    if (target != 0) {
+        g_sceneChainCallCounts.lastIndTarget.store(target, std::memory_order_relaxed);
+    }
+    if (!cpu || target < 0x80000000u || target >= 0x80840000u) {
         return;
     }
     const uint32_t obj = cpu->gpr[3];
@@ -709,15 +713,21 @@ inline void CountIndirectVtableSlot(uint32_t target, CpuContext* cpu) {
         return;
     }
     uint32_t vt = 0;
-    if (!Memory::TryRead32(obj, vt) || vt == 0 || target < vt || target >= vt + 128u) {
+    if (!Memory::TryRead32(obj, vt) || vt < 0x80000000u || vt >= 0x80840000u ||
+        target < vt || target >= vt + 128u) {
         return;
     }
     if ((target & 3u) != 0 || ((target - vt) & 3u) != 0) {
         return;
     }
+    // Verify the slot really points at the target (vtable-form call), so a
+    // coincidental range hit cannot misattribute.
+    uint32_t slotVal = 0;
+    if (!Memory::TryRead32(vt + (target - vt), slotVal) || slotVal != target) {
+        return;
+    }
     const uint32_t slot = target - vt;
     g_sceneChainCallCounts.lastIndSlot.store(slot, std::memory_order_relaxed);
-    g_sceneChainCallCounts.lastIndTarget.store(target, std::memory_order_relaxed);
     switch (slot) {
     case 16: g_sceneChainCallCounts.ind16.fetch_add(1, std::memory_order_relaxed); break;
     case 20: g_sceneChainCallCounts.ind20.fetch_add(1, std::memory_order_relaxed); break;

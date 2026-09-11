@@ -156,6 +156,7 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
     uint64_t cIO = g_sceneChainCallCounts.indOther.load(std::memory_order_relaxed);
     uint64_t cLS = g_sceneChainCallCounts.lastIndSlot.load(std::memory_order_relaxed);
     uint64_t cLT = g_sceneChainCallCounts.lastIndTarget.load(std::memory_order_relaxed);
+    uint64_t cIT = g_sceneChainCallCounts.indTotal.load(std::memory_order_relaxed);
     char buf[1088];
     std::snprintf(buf, sizeof(buf), "gxbeg=%llu gxend=%llu gxdl=%llu gxfifo=%llu dlbeg=%llu dlend=%llu dlact=%llu"
         " fdraw=%llu frawok=%llu frawfail=%llu fincr=%llu fnull=%llu funk=%llu fbp=%llu fcp=%llu fxf=%llu fib=%llu vrem=%llu fback=%llu nattr=%llu"
@@ -164,7 +165,7 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         " bpReg=0x%llx bpBack=%llu"
         " chain[run=%llu rk=%llu sm=%llu cc=%llu sc=%llu sd=%llu se=%llu sk=%llu"
         " de=%llu dh=%llu ps=%llu st=%llu ub=%llu ub0=%llu ub1=%llu"
-        " i16=%llu i20=%llu i24=%llu i28=%llu i32=%llu i36=%llu iO=%llu lS=%llu lT=0x%llx]",
+        " i16=%llu i20=%llu i24=%llu i28=%llu i32=%llu i36=%llu iO=%llu lS=%llu lT=0x%llx iT=%llu]",
         (unsigned long long)begins, (unsigned long long)ends,
         (unsigned long long)lists, (unsigned long long)fifoBytes,
         (unsigned long long)dlBegins, (unsigned long long)dlEnds,
@@ -188,7 +189,8 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         (unsigned long long)cUb0, (unsigned long long)cUb1,
         (unsigned long long)cI16, (unsigned long long)cI20, (unsigned long long)cI24,
         (unsigned long long)cI28, (unsigned long long)cI32, (unsigned long long)cI36,
-        (unsigned long long)cIO, (unsigned long long)cLS, (unsigned long long)cLT);
+        (unsigned long long)cIO, (unsigned long long)cLS, (unsigned long long)cLT,
+        (unsigned long long)cIT);
     // Temporary: one-shot guest thread dump per watchdog sample (logcat THRDUMP
     // lines). Remove with the GX counters.
     OS_HLE_DumpThreadsTemp();
