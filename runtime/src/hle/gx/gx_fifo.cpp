@@ -439,7 +439,15 @@ void HleFifoWrite(u32 val, uint32_t sizeBytes) {
         }
 
         if (cmd == GX_LOAD_BP_REG_CMD) {
-            if (g_hleGxState.fifoByteCount < 5) { g_diagFifoStallBp.fetch_add(1, std::memory_order_relaxed); break; }
+            if (g_hleGxState.fifoByteCount < 5) {
+                g_diagFifoStallBp.fetch_add(1, std::memory_order_relaxed);
+                g_diagFifoStallBpReg.store(
+                    g_hleGxState.fifoByteCount >= 2 ? data[1] : 0x100u,
+                    std::memory_order_relaxed);
+                g_diagFifoStallBpBacklog.store(g_hleGxState.fifoByteCount,
+                                               std::memory_order_relaxed);
+                break;
+            }
             const uint32_t bpWord = ReadBE32(data + 1);
             GXApplyBPReg(static_cast<uint8_t>(bpWord >> 24), bpWord & 0x00FFFFFFu);
             if (!consumeBytes(5, sink)) break;

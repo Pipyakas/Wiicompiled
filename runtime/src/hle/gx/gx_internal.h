@@ -115,6 +115,10 @@ extern std::atomic<uint64_t> g_diagFifoStallIndx;
 extern std::atomic<uint64_t> g_diagFifoStallCallDl;
 extern std::atomic<uint64_t> g_diagFifoStallDraw;
 extern std::atomic<uint64_t> g_diagFifoStallAttr;
+// Last stalled BP packet detail: register byte (packet[1], 0x100 if <2 bytes
+// buffered) and ring backlog at the stBp break. Same temporary contract.
+extern std::atomic<uint64_t> g_diagFifoStallBpReg;
+extern std::atomic<uint64_t> g_diagFifoStallBpBacklog;
 extern "C" void GX_HLE_DiagFifoSnapshot(uint64_t* outDraw, uint64_t* outRawOk, uint64_t* outRawFail,
                                         uint64_t* outIncr, uint64_t* outNull, uint64_t* outUnk,
                                         uint64_t* outBp, uint64_t* outCp, uint64_t* outXf,
@@ -123,7 +127,8 @@ extern "C" void GX_HLE_DiagFifoSnapshot(uint64_t* outDraw, uint64_t* outRawOk, u
 extern "C" void GX_HLE_DiagFifoStallSnapshot(uint64_t* outNop, uint64_t* outBp, uint64_t* outCp,
                                              uint64_t* outXf, uint64_t* outIndx,
                                              uint64_t* outCallDl, uint64_t* outDraw,
-                                             uint64_t* outAttr);
+                                             uint64_t* outAttr, uint64_t* outBpReg = nullptr,
+                                             uint64_t* outBpBacklog = nullptr);
 
 // --- Global State ---
 extern "C" {

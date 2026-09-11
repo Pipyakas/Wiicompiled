@@ -105,7 +105,8 @@ extern "C" void GX_HLE_DiagFifoSnapshot(uint64_t*, uint64_t*, uint64_t*, uint64_
                                         uint64_t*, uint64_t*, uint64_t*, uint64_t*, uint64_t*,
                                         uint64_t*, uint64_t*);
 extern "C" void GX_HLE_DiagFifoStallSnapshot(uint64_t*, uint64_t*, uint64_t*, uint64_t*, uint64_t*,
-                                             uint64_t*, uint64_t*, uint64_t*);
+                                             uint64_t*, uint64_t*, uint64_t*, uint64_t* = nullptr,
+                                             uint64_t* = nullptr);
 void OS_HLE_DumpThreadsTemp();
 extern "C" void VI_HLE_DiagSnapshot(uint64_t*, uint64_t*, uint64_t*, uint64_t*);
 
@@ -123,12 +124,15 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
     uint64_t viadv = 0, vipost = 0, viguard = 0, viret = 0;
     VI_HLE_DiagSnapshot(&viadv, &vipost, &viguard, &viret);
     uint64_t stNop = 0, stBp = 0, stCp = 0, stXf = 0, stIndx = 0, stCallDl = 0, stDraw = 0, stAttr = 0;
-    GX_HLE_DiagFifoStallSnapshot(&stNop, &stBp, &stCp, &stXf, &stIndx, &stCallDl, &stDraw, &stAttr);
-    char buf[640];
+    uint64_t stBpReg = 0, stBpBack = 0;
+    GX_HLE_DiagFifoStallSnapshot(&stNop, &stBp, &stCp, &stXf, &stIndx, &stCallDl, &stDraw, &stAttr,
+                                 &stBpReg, &stBpBack);
+    char buf[704];
     std::snprintf(buf, sizeof(buf), "gxbeg=%llu gxend=%llu gxdl=%llu gxfifo=%llu dlbeg=%llu dlend=%llu dlact=%llu"
         " fdraw=%llu frawok=%llu frawfail=%llu fincr=%llu fnull=%llu funk=%llu fbp=%llu fcp=%llu fxf=%llu fib=%llu vrem=%llu fback=%llu nattr=%llu"
         " viadv=%llu vipost=%llu viguard=%llu viret=%llu"
-        " stNop=%llu stBp=%llu stCp=%llu stXf=%llu stIndx=%llu stDl=%llu stDraw=%llu stAttr=%llu",
+        " stNop=%llu stBp=%llu stCp=%llu stXf=%llu stIndx=%llu stDl=%llu stDraw=%llu stAttr=%llu"
+        " bpReg=0x%llx bpBack=%llu",
         (unsigned long long)begins, (unsigned long long)ends,
         (unsigned long long)lists, (unsigned long long)fifoBytes,
         (unsigned long long)dlBegins, (unsigned long long)dlEnds,
@@ -142,7 +146,8 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         (unsigned long long)viguard, (unsigned long long)viret,
         (unsigned long long)stNop, (unsigned long long)stBp, (unsigned long long)stCp,
         (unsigned long long)stXf, (unsigned long long)stIndx, (unsigned long long)stCallDl,
-        (unsigned long long)stDraw, (unsigned long long)stAttr);
+        (unsigned long long)stDraw, (unsigned long long)stAttr,
+        (unsigned long long)stBpReg, (unsigned long long)stBpBack);
     // Temporary: one-shot guest thread dump per watchdog sample (logcat THRDUMP
     // lines). Remove with the GX counters.
     OS_HLE_DumpThreadsTemp();

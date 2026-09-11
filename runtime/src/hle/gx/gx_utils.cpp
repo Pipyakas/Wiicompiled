@@ -41,6 +41,8 @@ std::atomic<uint64_t> g_diagFifoStallIndx{0};
 std::atomic<uint64_t> g_diagFifoStallCallDl{0};
 std::atomic<uint64_t> g_diagFifoStallDraw{0};
 std::atomic<uint64_t> g_diagFifoStallAttr{0};
+std::atomic<uint64_t> g_diagFifoStallBpReg{0xFFFFFFFFull};
+std::atomic<uint64_t> g_diagFifoStallBpBacklog{0};
 
 extern "C" void GX_HLE_DiagSnapshot(uint64_t* begins, uint64_t* ends, uint64_t* callLists,
                                     uint64_t* fifoBytes, uint64_t* dlBegins, uint64_t* dlEnds,
@@ -81,7 +83,8 @@ extern "C" void GX_HLE_DiagFifoSnapshot(uint64_t* outDraw, uint64_t* outRawOk, u
 extern "C" void GX_HLE_DiagFifoStallSnapshot(uint64_t* outNop, uint64_t* outBp, uint64_t* outCp,
                                              uint64_t* outXf, uint64_t* outIndx,
                                              uint64_t* outCallDl, uint64_t* outDraw,
-                                             uint64_t* outAttr) {
+                                             uint64_t* outAttr, uint64_t* outBpReg,
+                                             uint64_t* outBpBacklog) {
     if (outNop) *outNop = g_diagFifoStallNop.load(std::memory_order_relaxed);
     if (outBp) *outBp = g_diagFifoStallBp.load(std::memory_order_relaxed);
     if (outCp) *outCp = g_diagFifoStallCp.load(std::memory_order_relaxed);
@@ -90,6 +93,8 @@ extern "C" void GX_HLE_DiagFifoStallSnapshot(uint64_t* outNop, uint64_t* outBp, 
     if (outCallDl) *outCallDl = g_diagFifoStallCallDl.load(std::memory_order_relaxed);
     if (outDraw) *outDraw = g_diagFifoStallDraw.load(std::memory_order_relaxed);
     if (outAttr) *outAttr = g_diagFifoStallAttr.load(std::memory_order_relaxed);
+    if (outBpReg) *outBpReg = g_diagFifoStallBpReg.load(std::memory_order_relaxed);
+    if (outBpBacklog) *outBpBacklog = g_diagFifoStallBpBacklog.load(std::memory_order_relaxed);
 }
 
 GXColor DecodeGxColor(uint32_t colorWord) {
