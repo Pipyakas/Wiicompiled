@@ -67,6 +67,8 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> ind32{0};  // vtable+32
     std::atomic<uint64_t> ind36{0};  // vtable+36
     std::atomic<uint64_t> indOther{0};
+    std::atomic<uint64_t> dvdStatus{0};  // 0x80162B50 DVD::GetDriveStatus
+    std::atomic<uint64_t> dvdStatusRet{0xFFFFFFFFull};  // last r3 on return
 };
 inline SceneChainCallCounts g_sceneChainCallCounts;
 inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
@@ -723,6 +725,9 @@ inline void CountIndirectVtableSlot(uint32_t target, CpuContext* cpu) {
     case 0x80008E20u: g_sceneChainCallCounts.discHalt.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B26Cu: g_sceneChainCallCounts.powState.fetch_add(1, std::memory_order_relaxed); break;
     case 0x801AACA8u: g_sceneChainCallCounts.sleepTk.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80162B50u:
+        g_sceneChainCallCounts.dvdStatus.fetch_add(1, std::memory_order_relaxed);
+        break;
     default: break;
     }
     if (target != 0) {

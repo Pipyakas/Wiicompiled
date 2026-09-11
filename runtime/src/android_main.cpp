@@ -160,7 +160,8 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
     uint64_t cR3 = g_sceneChainCallCounts.lastIndR3.load(std::memory_order_relaxed);
     uint64_t cR21 = g_sceneChainCallCounts.lastIndR21.load(std::memory_order_relaxed);
     uint64_t cVT = g_sceneChainCallCounts.lastIndVT.load(std::memory_order_relaxed);
-    char buf[1152];
+    uint64_t cDvd = g_sceneChainCallCounts.dvdStatus.load(std::memory_order_relaxed);
+    char buf[1216];
     std::snprintf(buf, sizeof(buf), "gxbeg=%llu gxend=%llu gxdl=%llu gxfifo=%llu dlbeg=%llu dlend=%llu dlact=%llu"
         " fdraw=%llu frawok=%llu frawfail=%llu fincr=%llu fnull=%llu funk=%llu fbp=%llu fcp=%llu fxf=%llu fib=%llu vrem=%llu fback=%llu nattr=%llu"
         " viadv=%llu vipost=%llu viguard=%llu viret=%llu"
@@ -169,7 +170,7 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         " chain[run=%llu rk=%llu sm=%llu cc=%llu sc=%llu sd=%llu se=%llu sk=%llu"
         " de=%llu dh=%llu ps=%llu st=%llu ub=%llu ub0=%llu ub1=%llu"
         " i16=%llu i20=%llu i24=%llu i28=%llu i32=%llu i36=%llu iO=%llu lS=%llu lT=0x%llx iT=%llu"
-        " r3=0x%llx r21=0x%llx vt=0x%llx]",
+        " r3=0x%llx r21=0x%llx vt=0x%llx dvd=%llu]",
         (unsigned long long)begins, (unsigned long long)ends,
         (unsigned long long)lists, (unsigned long long)fifoBytes,
         (unsigned long long)dlBegins, (unsigned long long)dlEnds,
@@ -195,7 +196,8 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
         (unsigned long long)cI28, (unsigned long long)cI32, (unsigned long long)cI36,
         (unsigned long long)cIO, (unsigned long long)cLS, (unsigned long long)cLT,
         (unsigned long long)cIT,
-        (unsigned long long)cR3, (unsigned long long)cR21, (unsigned long long)cVT);
+        (unsigned long long)cR3, (unsigned long long)cR21, (unsigned long long)cVT,
+        (unsigned long long)cDvd);
     // Temporary: one-shot guest thread dump per watchdog sample (logcat THRDUMP
     // lines). Remove with the GX counters.
     OS_HLE_DumpThreadsTemp();
@@ -236,6 +238,7 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
             uint32_t b3276 = 0, b180 = 0, b181 = 0;
             uint32_t g104 = 0xFFFFFFFFu, g105 = 0xFFFFFFFFu, g106 = 0xFFFFFFFFu;
             uint32_t g107 = 0xFFFFFFFFu, g108 = 0xFFFFFFFFu, g81 = 0xFFFFFFFFu;
+            uint32_t dvdA = 0xFFFFFFFFu, dvdB = 0xFFFFFFFFu, dvdC = 0xFFFFFFFFu;
             if (Memory::TryRead32(0x80386F60u, sSys) && sSys != 0) {
                 Memory::TryRead32(sSys + 84u, mgr);
                 // RKSystem::Run loop gates (r21 == sSys): +104 frame counter,
@@ -254,6 +257,12 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
                 if (Memory::TryRead32(0x8038CC00u - 27712u, sStatic) && sStatic != 0) {
                     if (Memory::TryRead32(sStatic + 81u, gb)) g81 = gb & 0xFFu;
                 }
+                // DVD::GetDriveStatus inputs (r13-relative): -26004 nonzero
+                // gate, -26008 second gate, -25872 pointer gate. Temporary:
+                // which word steers the status off the ready path.
+                if (Memory::TryRead32(0x8038CC00u - 26004u, gb)) dvdA = gb;
+                if (Memory::TryRead32(0x8038CC00u - 26008u, gb)) dvdB = gb;
+                if (Memory::TryRead32(0x8038CC00u - 25872u, gb)) dvdC = gb;
             }
             if (mgr != 0) {
                 Memory::TryRead32(mgr + 12u, cur);
@@ -281,15 +290,17 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
             Memory::TryRead32(0x8042BC3Cu, jb);
             Memory::TryRead32(0x8042BC40u, jc);
             Memory::TryRead32(0x8042BC38u, cj);
-            char sbuf[512];
+            char sbuf[576];
             std::snprintf(sbuf, sizeof(sbuf),
                 " scn[sSys=0x%08X mgr=0x%08X cur=0x%08X calc=0x%08X draw=0x%08X"
                 " 3192=0x%08X 3264=%u 3268=%u 3184=%u m20=%u m28=%u f3276=%u b180=%u b181=%u"
                 " g104=%u g105=%u g106=%u g107=%u g108=%u g81=%u"
+                " dvdA=0x%08X dvdB=0x%08X dvdC=0x%08X"
                 " tq[q0=%u q1=%u base=0x%08X n=%u cur=0x%08X]]",
                 sSys, mgr, cur, calcT, drawT,
                 w3192, w3264, w3268, w3184, m20, m28, b3276, b180, b181,
                 g104, g105, g106, g107, g108, g81,
+                dvdA, dvdB, dvdC,
                 q0, q1, jb, jc, cj);
             out += sbuf;
         }
