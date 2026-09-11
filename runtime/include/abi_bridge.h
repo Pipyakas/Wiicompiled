@@ -25,10 +25,39 @@ inline void InvokeIndirectCpu(uint32_t target, CpuContext* ctx);
 // static calls deliberately bypass InvokeDirectCpu for performance.
 // (used for the path mask filtering in ScnRenderer::createPath: depth of
 // field is always removed, bloom when the user disabled it)
+//
+// Temporary scene-chain execution counters (relaxed, diagnostic only): every
+// dispatch path — MKW_STATIC_TRANSLATED_CALL, InvokeDirectCpu,
+// InvokeIndirectCpu — flows through here, so this is the one choke point that
+// counts how far RKSystem::Run gets per iteration. Remove with the GX
+// counters once the black-screen cause is found.
+struct SceneChainCallCounts {
+    std::atomic<uint64_t> run{0};        // 0x8000951C RKSystem::Run entry
+    std::atomic<uint64_t> rkCalc{0};     // 0x80009984 RKSceneManager::calc
+    std::atomic<uint64_t> smCalc{0};     // 0x8023AE60 EGG::SceneManager::calc
+    std::atomic<uint64_t> calcCur{0};    // 0x8023B588 calcCurrentScene
+    std::atomic<uint64_t> strapCalc{0};  // 0x800079D0 StrapScene::calc
+    std::atomic<uint64_t> strapDraw{0};  // 0x80007BC8 StrapScene::draw
+    std::atomic<uint64_t> strapEnter{0}; // 0x800074D8 StrapScene::enter
+    std::atomic<uint64_t> strapCheck{0}; // 0x800077C8 StrapScene::CheckInput
+};
+inline SceneChainCallCounts g_sceneChainCallCounts;
 inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     if (target == 0x8023BD38u) {
         // ScnRenderer::createPath receives the post-processing path mask in r4.
         ctx->gpr[4] = RuntimeGameGraphicsOptions::FilterScnRendererPathMask(ctx->gpr[4]);
+    }
+    // Temporary scene-chain counts (see above).
+    switch (target) {
+    case 0x8000951Cu: g_sceneChainCallCounts.run.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80009984u: g_sceneChainCallCounts.rkCalc.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8023AE60u: g_sceneChainCallCounts.smCalc.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8023B588u: g_sceneChainCallCounts.calcCur.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x800079D0u: g_sceneChainCallCounts.strapCalc.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80007BC8u: g_sceneChainCallCounts.strapDraw.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x800074D8u: g_sceneChainCallCounts.strapEnter.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x800077C8u: g_sceneChainCallCounts.strapCheck.fetch_add(1, std::memory_order_relaxed); break;
+    default: break;
     }
 }
 
