@@ -191,19 +191,21 @@ Java_org_patchzyy_wiicompiled_GameActivity_nativeGetGxDiagnostics(JNIEnv* env, j
     uint64_t cDR = g_sceneChainCallCounts.dvdRead.load(std::memory_order_relaxed);
     uint64_t cDG = g_sceneChainCallCounts.dvdMsg.load(std::memory_order_relaxed);
     uint64_t cOS = g_sceneChainCallCounts.optSet.load(std::memory_order_relaxed);
-    // Last-8 indirect ring (newest last): target + r3 pairs, unconditional.
+    // Last-32 indirect ring (newest last): target + r3 pairs, unconditional.
+    // Full ring, not last-8: a frame issues ~26 indirects so 8 slots evict
+    // the mid-frame virtuals (e.g. Run's Display+20 work call). Temporary.
     uint64_t rIdx = g_sceneChainCallCounts.ringIdx.load(std::memory_order_relaxed);
-    char rbuf[512];
+    char rbuf[1152];
     {
         char* p = rbuf;
         size_t left = sizeof(rbuf);
         int n = std::snprintf(p, left, " ring[");
         if (n > 0) { p += n; left -= (size_t)n; }
-        for (int k = 7; k >= 0 && left > 1; --k) {
+        for (int k = 31; k >= 0 && left > 1; --k) {
             uint64_t slot = (rIdx + 32u - 1u - (uint64_t)k) & 31u;
             uint64_t t = g_sceneChainCallCounts.ringT[slot].load(std::memory_order_relaxed);
             uint64_t rr = g_sceneChainCallCounts.ringR[slot].load(std::memory_order_relaxed);
-            n = std::snprintf(p, left, "%s0x%llx:0x%llx", k == 7 ? "" : " ",
+            n = std::snprintf(p, left, "%s0x%llx:0x%llx", k == 31 ? "" : " ",
                               (unsigned long long)t, (unsigned long long)rr);
             if (n > 0) { p += n; left -= (size_t)n; }
         }
