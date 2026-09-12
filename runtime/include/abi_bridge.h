@@ -77,6 +77,7 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> dvdErrCb{0};     // 0x8015EE70 cbForStateError
     std::atomic<uint64_t> dvdReady{0};     // 0x80161614 stateReady
     std::atomic<uint64_t> dvdCmdStatus{0}; // 0x80162A88 GetCommandBlockStatus
+    std::atomic<uint64_t> dvdThread{0};    // 0x80008D18 DvdThread_main poll
     // Run entry object (r3 when target==RKSystem::Run): answers whether
     // Run's r21 gate base is sSys or a different object.
     std::atomic<uint64_t> runObj{0};
@@ -143,6 +144,14 @@ inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     case 0x800077C8u: g_sceneChainCallCounts.strapCheck.fetch_add(1, std::memory_order_relaxed); break;
     case 0x80008E74u: g_sceneChainCallCounts.discErr.fetch_add(1, std::memory_order_relaxed); break;
     case 0x80008E20u: g_sceneChainCallCounts.discHalt.fetch_add(1, std::memory_order_relaxed); break;
+    // DVD liveness visits (static + indirect both flow through here; the
+    // CountIndirectVtableSlot cases for these addresses only see indirect).
+    case 0x80008D18u: g_sceneChainCallCounts.dvdThread.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80162B50u: g_sceneChainCallCounts.dvdStatus.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80162A88u: g_sceneChainCallCounts.dvdCmdStatus.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x8015EE70u: g_sceneChainCallCounts.dvdErrCb.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x80161614u: g_sceneChainCallCounts.dvdReady.fetch_add(1, std::memory_order_relaxed); break;
+    case 0x801640B4u: g_sceneChainCallCounts.dvdStoreErr.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B370u: g_sceneChainCallCounts.ripImpl.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B5C8u: g_sceneChainCallCounts.rip.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8000B6B0u: g_sceneChainCallCounts.mainB6B0.fetch_add(1, std::memory_order_relaxed); break;
@@ -800,24 +809,9 @@ inline void CountIndirectVtableSlot(uint32_t target, CpuContext* cpu) {
         g_sceneChainCallCounts.ringT[i].store(target, std::memory_order_relaxed);
         g_sceneChainCallCounts.ringR[i].store(cpu ? cpu->gpr[3] : 0u, std::memory_order_relaxed);
     }
-    switch (target) {
-    case 0x80162B50u:
-        g_sceneChainCallCounts.dvdStatus.fetch_add(1, std::memory_order_relaxed);
-        break;
-    case 0x801640B4u:
-        g_sceneChainCallCounts.dvdStoreErr.fetch_add(1, std::memory_order_relaxed);
-        break;
-    case 0x8015EE70u:
-        g_sceneChainCallCounts.dvdErrCb.fetch_add(1, std::memory_order_relaxed);
-        break;
-    case 0x80161614u:
-        g_sceneChainCallCounts.dvdReady.fetch_add(1, std::memory_order_relaxed);
-        break;
-    case 0x80162A88u:
-        g_sceneChainCallCounts.dvdCmdStatus.fetch_add(1, std::memory_order_relaxed);
-        break;
-    default: break;
-    }
+    // NOTE: DVD liveness visits are counted in ApplyRuntimeCallOptions
+    // (covers static + indirect); this switch stays empty so indirects are
+    // not double-counted.
     if (target != 0) {
         g_sceneChainCallCounts.lastIndTarget.store(target, std::memory_order_relaxed);
     }
