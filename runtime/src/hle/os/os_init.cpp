@@ -11,6 +11,7 @@
 #include <thread>
 
 #include "abi_bridge.h"
+#include "hle/runtime_parse_helpers.h"
 #include "memory.h"
 #include "hle_stubs.h"
 #include "ppc_runtime.h"
@@ -124,13 +125,26 @@ extern "C" void HLE_SISetSamplingRate_801b3acc(uint32_t msec)
 
 // Video Interface (VI) - TV output.
 
-// VIGetTvFormat (0x801bacd8): CRITICAL, must return 1 (VI_PAL) not 0, or PAL builds
-// misbehave/panic.
+// VIGetTvFormat (0x801bacd8): CRITICAL, must match the disc region —
+// 1 (VI_PAL) for PAL builds, 0 (VI_NTSC) for USA/JPN — or the game
+// misbehaves/panics (PAL-on-NTSC drops to the half-rate PAL50 sync path,
+// NTSC-on-PAL fails its video-mode checks the same way).
 extern "C" uint32_t HLE_VIGetTvFormat_801bacd8()
 {
     // VI_NTSC = 0, VI_PAL = 1, VI_MPAL = 2
-    RT_LOG(RT_TAG_OS) << "HLE_VIGetTvFormat_801bacd8 called: returning VI_PAL (1)" << std::endl;
-    return 1;
+    // Region byte is the 4th char of the game code at 0x80000000
+    // (RMCP/RMCJ = PAL, RMCE = NTSC-U, RMCJ handled as NTSC).
+    uint32_t format = 1;
+    if (Memory::Contains(0x80000000u, 4u)) {
+        const char region =
+            static_cast<char>((Memory::Read32(0x80000000u) >> 8) & 0xFFu);
+        if (region == 'E' || region == 'J') {
+            format = 0;
+        }
+    }
+    RT_LOG(RT_TAG_OS) << "HLE_VIGetTvFormat_801bacd8 called: returning " << format
+                      << (format == 1 ? " (VI_PAL)" : " (VI_NTSC)") << std::endl;
+    return format;
 }
 
 REGISTER_NATIVE_FUNCTION(0x801B2DE0, SIInit_801b2de0);

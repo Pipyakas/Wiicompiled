@@ -23,6 +23,7 @@
 extern "C" uint32_t Android_GetDiscGameCode(void);
 #endif
 #include "abi_bridge.h"
+#include "hle/runtime_parse_helpers.h"
 #include "memory.h"
 #include "ppc_runtime.h"
 #include "recomp_mod_loader.h"
@@ -513,11 +514,15 @@ void SystemBridge::SeedLowMemDefaults(const Memory::Config& config) {
     // Retro Rewind reads the region byte directly from here while building its
     // Retro-WFC payload URL, and OSGetAppGamename reads the app code mirrors
     // at 0x80003180/0x80003194 while building NAS auth fields.
-    // On Android the user may provide any region (RMCP/RMCE/RMCJ/etc.) in
-    // compressed formats (RVZ/WIA/WBFS/CISO) — reflect the actual disc header,
-    // not a hardcoded PAL RMCP01, so NTSC-U/J/K boot and online match region.
-    uint32_t discCode = 0x524D4350u; // "RMCP" fallback (desktop / no disc yet)
+    // The user may provide any region (RMCP/RMCE/RMCJ/etc.): on Android in
+    // compressed formats (RVZ/WIA/WBFS/CISO), on desktop in the extracted
+    // DATA tree dvd_root points at. Reflect the actual disc header, not a
+    // hardcoded PAL RMCP01, so NTSC-U/J/K boot and online match region.
+    uint32_t discCode = 0x524D4350u; // "RMCP" fallback (no disc yet)
     uint32_t discMaker = 0x30310100u; // "01" + disc 1
+    if (uint32_t dvdCode = RuntimeHle::CurrentGameCode(0); dvdCode != 0) {
+        discCode = dvdCode;
+    }
 #if defined(__ANDROID__)
     // SeedLowMem runs before the nod image opens, so the NOD header is not
     // available yet. android_main probes the ROM header at SDL_main; use the
