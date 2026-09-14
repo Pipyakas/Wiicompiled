@@ -7,6 +7,7 @@
 // Defined in hle/os/os_sleep.cpp; the sleep-timer table is file-local there.
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -698,7 +699,21 @@ void GuestFiberManager::FiberProc(void* param)
         }
 
 
-        if (vtable >= 0x80000000u && startFn >= 0x80000000u) {
+        // Break only once the *derived* vtable is installed. At OSCreateThread
+        // time the object may still carry the base EGG::Thread vtable
+        // (0x802A3FC0), whose slot+12 is the no-op base run (0x8024374c):
+        // starting the fiber then runs base run, returns immediately, and the
+        // fiber is reaped as a dead detached thread before the derived
+        // constructor installs the real run target (e.g. DiscCheckThread::run
+        // 0x80008D18). The DvdThread then never polls GetDriveStatus and the
+        // scene parks in the disc-error branch forever. Yield until the slot
+        // leaves the base run; a thread genuinely using the base run just
+        // waits out the retry budget below and exits as before.
+        constexpr uint32_t kEggThreadBaseVtable = 0x802A3FC0u;
+        constexpr uint32_t kEggThreadBaseRun = 0x8024374cu;
+        const bool derivedInstalled = (vtable != kEggThreadBaseVtable) ||
+            (startFn != kEggThreadBaseRun);
+        if (vtable >= 0x80000000u && startFn >= 0x80000000u && derivedInstalled) {
             break;
         }
 
@@ -753,16 +768,22 @@ void GuestFiberManager::FiberProc(void* param)
                   << " (" << e.reason() << ")" << std::endl;
     }
     
+    // A natural return from EGG::Thread::start (0x8024373c) may be the base
+    // no-op run (0x8024374c) executing before the derived constructor
+    // installed the real run target - the fiber entry stays schedulable so a
+    // later SelectThread can start it properly. Only a return from a real
+    // (non-start-trampoline) entry retires the fiber; the guest OSThread
+    // lifecycle above already ran either way.
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         auto it = s_fibers.find(guestThreadAddr);
-        if (it != s_fibers.end()) {
+        if (it != s_fibers.end() && entryPoint != 0x8024373cu) {
             it->second.terminated = true;
             it->second.state = ThreadState::MORIBUND;
         }
         s_currentGuestThread = 0;
     }
-    
+
     // Return to scheduler
     SwitchToScheduler();
 }

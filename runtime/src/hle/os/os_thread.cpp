@@ -193,11 +193,16 @@ void MarkFiberThreadTerminated(uint32_t threadPtr, uint16_t finalState)
         return;
     }
 
-    Fiber::ThreadState fiberState = Fiber::ThreadState::MORIBUND;
+    // A detached thread reaching guest state 0 was never started (EGG worker
+    // whose fiber ran the base no-op run and returned before the derived
+    // vtable was installed): its dead fiber entry must not poison the live
+    // OSThread - SelectThread picks by guest state, and the deferral loop in
+    // FiberProc will start it properly once derivedInstalled holds. Only a
+    // real exit (MORIBUND) retires the fiber entry.
     if (finalState == 0) {
-        fiberState = Fiber::ThreadState::WAITING;
+        return;
     }
-    Fiber::GuestFiberManager::ExitGuestThread(threadPtr, fiberState);
+    Fiber::GuestFiberManager::ExitGuestThread(threadPtr, Fiber::ThreadState::MORIBUND);
 }
 
 void WakeThreadJoiners(CpuContext* cpu, uint32_t threadPtr)
