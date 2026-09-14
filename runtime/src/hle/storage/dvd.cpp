@@ -58,6 +58,33 @@ static uint32_t CurrentDiscGameCode() {
         return code;
     }
 #endif
+    // Desktop: read the game code straight out of the extracted DATA tree's
+    // sys/boot.bin (first 4 bytes, e.g. RMCE for USA) so the answer follows
+    // the disc instead of hardcoding PAL. Falls back to RMCP only when the
+    // tree is missing/unreadable (GetDvdRoot would FailDvdRoot anyway).
+    try {
+        const fs::path root = RuntimeConfigFile::ResolvedDvdRoot();
+        if (!root.empty()) {
+            std::error_code ec;
+            std::ifstream boot(root / "sys" / "boot.bin", std::ios::binary);
+            if (boot) {
+                char code[4] = {};
+                boot.read(code, 4);
+                if (boot.gcount() == 4) {
+                    const uint32_t disc =
+                        (static_cast<uint32_t>(static_cast<uint8_t>(code[0])) << 24) |
+                        (static_cast<uint32_t>(static_cast<uint8_t>(code[1])) << 16) |
+                        (static_cast<uint32_t>(static_cast<uint8_t>(code[2])) << 8) |
+                        static_cast<uint32_t>(static_cast<uint8_t>(code[3]));
+                    if (RuntimeHle::IsValidGameCode(disc)) {
+                        return disc;
+                    }
+                }
+            }
+            (void)ec;
+        }
+    } catch (...) {
+    }
     return RuntimeHle::CurrentGameCode(0x524D4350u); // RMCP
 }
 
