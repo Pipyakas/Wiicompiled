@@ -18,11 +18,15 @@ void VI_HLE_WaitForNextRetracePoll();
 void VI_HLE_PresentFrame(bool presentedXfb, bool paceToRetrace);
 bool VI_HLE_IsAdvancingRetrace();
 void VI_HLE_SetXfbReady(uint32_t xfbAddr); // Called by GXCopyDisp to signal EFB→XFB copy
-#if defined(__ANDROID__)
-// Snapshot counters for the Java frame poller (see ViState): monotonically
-// increasing guest-progress signals, relaxed/diagnostic-only.
+// Snapshot counters for the frame poller (see ViState): monotonically
+// increasing guest-progress signals, relaxed/diagnostic-only. (Was
+// Android-only for the Java watchdog; desktop needs the same signals.)
 uint32_t VI_HLE_PresentedFrames() noexcept;
 uint32_t VI_HLE_Retraces() noexcept;
+#if !defined(__ANDROID__)
+// Temporary desktop watchdog starter (defined in vi.cpp). Remove with the
+// GX counters once the black screen is found.
+void VI_HLE_StartDesktopWatchdog();
 #endif
 void Audio_HLE_Tick(CpuContext* ctx, uint32_t deltaMicros);
 void Audio_HLE_Poll(CpuContext* ctx);

@@ -112,14 +112,13 @@ struct ViState {
     std::chrono::microseconds retraceInterval{16666us}; // ~60 Hz
     bool hasValidXfb = false; // True once we've received at least one GXCopyDisp
     uint32_t readyXfb = 0;    // XFB address from the most recent GXCopyDisp
-#if defined(__ANDROID__)
-    // Snapshot counters so a Java-side frame poller can observe guest
-    // progress without reading guest memory: bumped wherever the guest
-    // visibly advances (CopyDisp present, retrace present, retrace tick).
-    // Relaxed: diagnostic only, never a sync edge.
+    // Snapshot counters so a frame poller can observe guest progress without
+    // reading guest memory: bumped wherever the guest visibly advances
+    // (CopyDisp present, retrace present, retrace tick). Relaxed:
+    // diagnostic only, never a sync edge. (Was Android-only for the Java
+    // watchdog; the desktop watchdog needs the same signals.)
     std::atomic<uint32_t> presentedFrames{0};
     std::atomic<uint32_t> retraces{0};
-#endif
 
     // VIConfigure/VISetNextFrameBuffer/VISetBlack only write pending values below; VIFlush arms them but
     // the commit happens at the next retrace, matching real VI hardware. A VIFlush called from a
@@ -656,9 +655,7 @@ void VI_HLE_PresentFrame(bool presentedXfb, bool paceToRetrace) {
         // NotifyStrapInputAccepted fires from controller input; this only
         // retires the boot-frames half of the gate.)
         settings_overlay::NotifyBootFramesVisible();
-#if defined(__ANDROID__)
         g_vi.presentedFrames.fetch_add(1, std::memory_order_relaxed);
-#endif
     }
     // Pre-warm the next frame so subsequent GX work has a valid frame context.
     {
@@ -698,6 +695,9 @@ static void SeedViStateForInit(CpuContext* ctx, const char* who)
         std::lock_guard<std::mutex> lock(g_viMutex);
         EnsureInitializedLocked();
     }
+#if !defined(__ANDROID__)
+    VI_HLE_StartDesktopWatchdog();
+#endif
     ViSetR3(ctx, 0);
 }
 
@@ -713,12 +713,64 @@ extern "C" void __VIInit_HLE_801b9294(CpuContext* ctx)
 }
 PPC_NATIVE_OVERRIDE_VOID(801B9294, __VIInit_HLE_801b9294, (CpuContext* ctx), (ctx));
 
-#if defined(__ANDROID__)
 uint32_t VI_HLE_PresentedFrames() noexcept {
     return g_vi.presentedFrames.load(std::memory_order_relaxed);
 }
 uint32_t VI_HLE_Retraces() noexcept {
     return g_vi.retraces.load(std::memory_order_relaxed);
+}
+
+#if !defined(__ANDROID__)
+// Temporary desktop watchdog: same chain/pc/thread signal the Android Java
+// watchdog samples via JNI, logged here every 5s from a detached host
+// thread. Answers "is the guest advancing and where is the scene chain
+// parked" without a debugger or phone. Remove with the GX counters once
+// the black screen is found.
+namespace {
+void DesktopWatchdogThread() {
+    uint64_t lastPresented = 0, lastRetraces = 0;
+    for (;;) {
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+        const uint32_t presented = VI_HLE_PresentedFrames();
+        const uint32_t retraces = VI_HLE_Retraces();
+        const uint32_t pc =
+            RecompMod::g_currentTranslatedExecutionAddressAnyThread.load(
+                std::memory_order_relaxed);
+        uint64_t viadv = 0, vipost = 0, viguard = 0, viret = 0;
+        VI_HLE_DiagSnapshot(&viadv, &vipost, &viguard, &viret);
+        const uint64_t run = g_sceneChainCallCounts.run.load(std::memory_order_relaxed);
+        const uint64_t rk = g_sceneChainCallCounts.rkCalc.load(std::memory_order_relaxed);
+        const uint64_t sm = g_sceneChainCallCounts.smCalc.load(std::memory_order_relaxed);
+        const uint64_t cc = g_sceneChainCallCounts.calcCur.load(std::memory_order_relaxed);
+        const uint64_t sc = g_sceneChainCallCounts.strapCalc.load(std::memory_order_relaxed);
+        const uint64_t sd = g_sceneChainCallCounts.strapDraw.load(std::memory_order_relaxed);
+        const uint64_t se = g_sceneChainCallCounts.strapEnter.load(std::memory_order_relaxed);
+        const uint64_t sk = g_sceneChainCallCounts.strapCheck.load(std::memory_order_relaxed);
+        const uint64_t de = g_sceneChainCallCounts.discErr.load(std::memory_order_relaxed);
+        const uint64_t dh = g_sceneChainCallCounts.discHalt.load(std::memory_order_relaxed);
+        const uint64_t dl = RecompMod::g_currentTranslatedExecutionAddressAnyThread.load(
+            std::memory_order_relaxed);
+        (void)dl;
+        RT_LOG(RT_TAG_VI) << "watchdog: guest PC 0x" << std::hex << pc << std::dec
+                  << " presented=" << presented << "(+" << (presented - lastPresented) << ")"
+                  << " retraces=" << retraces << "(+" << (retraces - lastRetraces) << ")"
+                  << " viadv=" << viadv << " vipost=" << vipost
+                  << " viret=" << viret
+                  << " chain[run=" << run << " rk=" << rk << " sm=" << sm
+                  << " cc=" << cc << " sc=" << sc << " sd=" << sd
+                  << " se=" << se << " sk=" << sk
+                  << " de=" << de << " dh=" << dh << "]" << std::endl;
+        lastPresented = presented;
+        lastRetraces = retraces;
+        OS_HLE_DumpThreadsTemp();
+    }
+}
+} // namespace
+void VI_HLE_StartDesktopWatchdog() {
+    static std::once_flag started;
+    std::call_once(started, [] {
+        std::thread(DesktopWatchdogThread).detach();
+    });
 }
 #endif
 
@@ -1001,9 +1053,7 @@ extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
         preCb = g_vi.preRetraceCallback;
         postCb = g_vi.postRetraceCallback;
         WriteGuestStateLocked();
-#if defined(__ANDROID__)
         g_vi.retraces.fetch_add(1, std::memory_order_relaxed);
-#endif
     }
     cpu->gpr[3] = kViRetraceQueueAddr;
     OSWakeupThread_HLE_801aaaa4(cpu);
