@@ -911,16 +911,20 @@ static bool TryOpenCompressedDisc() {
 extern "C" void DVDInit_8015EA1C()
 {
     // The hardware drive queue and the DVD status-gate words below are
-    // re-seeded on EVERY call, not just the first: the translated DVD state
-    // machine (cbForStateError/stateReady, GetDriveStatus's -26004/-26008
-    // gates) legitimately zeroes them during error/ready transitions, and a
-    // seed-once cell that the guest later clears reads as "drive not ready"
-    // forever. The file-index scan stays one-shot via g_dvdInitialized.
+    // re-seeded ONLY on the first call: the translated DVD state machine
+    // (cbForStateError/stateReady, GetDriveStatus's -26004/-26008 gates)
+    // legitimately zeroes them during error/ready transitions, and DvdThread
+    // polls GetDriveStatus expecting 8 (not ready) while it waits for cover
+    // handling to complete. Re-seeding ready=1 on every DVDInit call forces
+    // the status walk past the not-ready gate into cbForStateError's
+    // error path (writes -26004=1), so Run's disc gate g81 sticks at 1 and
+    // the scene chain never runs. The file-index scan stays one-shot via
+    // g_dvdInitialized.
+    if (g_dvdInitialized) return;
     CompleteDvdCancelState();
     Memory::Write32(0x80386730u, 0x80343230u);
     Memory::Write32(0x80386668u, 1);
     Memory::Write32(0x8038666Cu, 1);
-    if (g_dvdInitialized) return;
     // The scan below builds g_fileEntries incrementally, so a re-entrant call
     // must not start a second scan on top of a half-built index and duplicate
     // every entry.
