@@ -650,13 +650,14 @@ void VI_HLE_PresentFrame(bool presentedXfb, bool paceToRetrace) {
         std::lock_guard<std::mutex> lock(g_viMutex);
         g_vi.hasValidXfb = false;
         g_vi.readyXfb = 0;
-#if defined(__ANDROID__)
-        g_vi.presentedFrames.fetch_add(1, std::memory_order_relaxed);
         // The guest's own frames are reaching the screen: retire the opaque
         // boot cover so the title screen shows instead of a black overlay.
-        // (Desktop keeps the strap-gated cover: NotifyStrapInputAccepted
-        // fires from controller input there.)
+        // (Desktop additionally keeps the strap-gated cover until
+        // NotifyStrapInputAccepted fires from controller input; this only
+        // retires the boot-frames half of the gate.)
         settings_overlay::NotifyBootFramesVisible();
+#if defined(__ANDROID__)
+        g_vi.presentedFrames.fetch_add(1, std::memory_order_relaxed);
 #endif
     }
     // Pre-warm the next frame so subsequent GX work has a valid frame context.

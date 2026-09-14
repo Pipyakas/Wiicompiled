@@ -920,7 +920,6 @@ void NotifyStrapInputAccepted() noexcept {
     }
 }
 
-#if defined(__ANDROID__)
 void NotifyBootFramesVisible() noexcept {
     // Same dismissal as strap input, without requiring controller hardware:
     // once the guest's own frames present, the opaque boot cover has served
@@ -932,7 +931,6 @@ void NotifyBootFramesVisible() noexcept {
                                     std::memory_order_release);
     }
 }
-#endif
 
 void AdvancePresentedFrame() noexcept { ++g_presentedFrame; }
 } // namespace settings_overlay
