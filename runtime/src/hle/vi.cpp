@@ -780,6 +780,36 @@ void DesktopWatchdogThread() {
             Memory::TryRead32(0x8038CC00u - 26008u, dvdB);
             Memory::TryRead32(0x8038CC00u - 25872u, dvdC);
         }
+        // DiscCheckThread object (*sStatic): vtable, vtable+12 Run target,
+        // OSThread* at +8 with its state/suspend/pc/lr, and the +72/+80 words
+        // Run tests. Answers whether the DvdThread fiber died before its
+        // first GetDriveStatus poll (dth==0 with a terminated OSThread).
+        uint32_t dcObj = 0, dcVT = 0xFFFFFFFFu, dcRun = 0xFFFFFFFFu;
+        uint32_t dcOS = 0, dcOSst = 0xFFFFFFFFu, dcSusp = 0xFFFFFFFFu;
+        uint32_t dcOSpc = 0xFFFFFFFFu, dcOSlr = 0xFFFFFFFFu;
+        uint32_t dcW72 = 0xFFFFFFFFu, dcW80 = 0xFFFFFFFFu;
+        {
+            uint32_t sStatic = 0;
+            if (Memory::TryRead32(0x8038CC00u - 27712u, sStatic) && sStatic != 0) {
+                dcObj = sStatic;
+                uint32_t vt = 0;
+                if (Memory::TryRead32(sStatic, vt)) {
+                    dcVT = vt;
+                    Memory::TryRead32(vt + 12u, dcRun);
+                }
+                uint32_t osThr = 0;
+                if (Memory::TryRead32(sStatic + 8u, osThr) && osThr != 0) {
+                    dcOS = osThr;
+                    uint32_t stw = 0;
+                    if (Memory::TryRead32(osThr + 0x2C8u, stw)) dcOSst = stw & 0xFFFFu;
+                    Memory::TryRead32(osThr + 0x2CCu, dcSusp);
+                    Memory::TryRead32(osThr + 0x198u, dcOSpc);
+                    Memory::TryRead32(osThr + 0x84u, dcOSlr);
+                }
+                Memory::TryRead32(sStatic + 72u, dcW72);
+                Memory::TryRead32(sStatic + 80u, dcW80);
+            }
+        }
         RT_LOG(RT_TAG_VI) << "watchdog: guest PC 0x" << std::hex << pc << std::dec
                   << " presented=" << presented << "(+" << (presented - lastPresented) << ")"
                   << " retraces=" << retraces << "(+" << (retraces - lastRetraces) << ")"
@@ -799,6 +829,11 @@ void DesktopWatchdogThread() {
                   << " g108=" << g108 << " g81=" << g81 << "]"
                   << " dvd[A=0x" << std::hex << dvdA
                   << " B=0x" << dvdB << " C=0x" << dvdC << std::dec << "]"
+                  << " dco[obj=0x" << std::hex << dcObj << " vt=0x" << dcVT
+                  << " run=0x" << dcRun << " os=0x" << dcOS << std::dec
+                  << " osst=" << dcOSst << " susp=" << dcSusp
+                  << " ospc=0x" << std::hex << dcOSpc << " oslr=0x" << dcOSlr
+                  << " w72=0x" << dcW72 << " w80=0x" << dcW80 << std::dec << "]"
                   << std::endl;
         lastPresented = presented;
         lastRetraces = retraces;
