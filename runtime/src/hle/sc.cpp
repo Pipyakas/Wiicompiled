@@ -12,7 +12,32 @@
 
 namespace {
 
-constexpr uint32_t kPalProductRegion = 2;
+// Region byte is the 4th char of the game code at 0x80000000
+// (RMCP = PAL, RMCE = NTSC-U, RMCJ = NTSC-J). SeedLowMemDefaults publishes
+// the real disc header there before boot, so SC answers follow the disc
+// instead of hardcoding PAL. Falls back to PAL when lowmem is not up yet.
+char DiscRegionByte()
+{
+    if (Memory::Contains(0x80000000u, 4u)) {
+        const uint32_t code = Memory::Read32(0x80000000u);
+        bool valid = true;
+        for (int shift = 24; shift >= 0; shift -= 8) {
+            const char ch = static_cast<char>((code >> shift) & 0xFFu);
+            if (!((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'Z') ||
+                  (ch >= 'a' && ch <= 'z'))) {
+                valid = false;
+                break;
+            }
+        }
+        if (valid) {
+            const char region = static_cast<char>((code >> 8) & 0xFFu);
+            if (region == 'E' || region == 'J' || region == 'P') {
+                return region;
+            }
+        }
+    }
+    return 'P';
+}
 
 } // namespace
 
@@ -57,23 +82,29 @@ PPC_NATIVE_OVERRIDE(801B1CAC, SCGetEuRgb60Mode_HLE, uint32_t, (), ());
 
 extern "C" uint32_t SCGetProductArea_HLE()
 {
-    // The PAL setting.txt AREA value is "EUR". The SDK's lookup table at
-    // 0x8029CEB0 maps JPN=0, USA=1, EUR=2.
-    return kPalProductRegion;
+    // The SDK's lookup table at 0x8029CEB0 maps JPN=0, USA=1, EUR=2.
+    // USA discs report USA; PAL/JPN fall back to the EUR/JPN entries.
+    switch (DiscRegionByte()) {
+    case 'E': return 1;
+    case 'J': return 0;
+    default: return 2;
+    }
 }
 
 PPC_NATIVE_OVERRIDE(801B23A0, SCGetProductArea_HLE, uint32_t, (), ());
 
 extern "C" uint32_t SCGetProductCode_HLE()
 {
-    // Original PAL SC storage for the six-byte CODE value.
+    // Original SC storage for the product CODE value (PAL "LEH", USA "LU").
     constexpr uint32_t kProductCodeAddress = 0x803869E0u;
-    static constexpr char kProductCode[] = "LEH";
-    if (!Memory::Contains(kProductCodeAddress, sizeof(kProductCode))) {
+    static constexpr char kPalProductCode[] = "LEH";
+    static constexpr char kUsaProductCode[] = "LU";
+    const char* code = (DiscRegionByte() == 'E') ? kUsaProductCode : kPalProductCode;
+    const size_t size = std::strlen(code) + 1;
+    if (!Memory::Contains(kProductCodeAddress, size)) {
         return 0;
     }
-    std::memcpy(Memory::GetPointer(kProductCodeAddress, sizeof(kProductCode)),
-                kProductCode, sizeof(kProductCode));
+    std::memcpy(Memory::GetPointer(kProductCodeAddress, size), code, size);
     return kProductCodeAddress;
 }
 
@@ -94,9 +125,12 @@ PPC_NATIVE_OVERRIDE(801B2460, SCGetProductSN_HLE, uint32_t, (uint32_t serialAddr
 
 extern "C" uint32_t SCGetProductGameRegion_HLE()
 {
-    // The PAL setting.txt GAME value is "EU". The SDK's own lookup table at
-    // 0x8029CEF8 maps JP=0, US=1, EU=2.
-    return kPalProductRegion;
+    // The SDK's own lookup table at 0x8029CEF8 maps JP=0, US=1, EU=2.
+    switch (DiscRegionByte()) {
+    case 'E': return 1;
+    case 'J': return 0;
+    default: return 2;
+    }
 }
 
 PPC_NATIVE_OVERRIDE(801B24C8, SCGetProductGameRegion_HLE, uint32_t, (), ());
