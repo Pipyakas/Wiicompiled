@@ -748,6 +748,14 @@ void DesktopWatchdogThread() {
         const uint64_t sk = g_sceneChainCallCounts.strapCheck.load(std::memory_order_relaxed);
         const uint64_t de = g_sceneChainCallCounts.discErr.load(std::memory_order_relaxed);
         const uint64_t dh = g_sceneChainCallCounts.discHalt.load(std::memory_order_relaxed);
+        const uint64_t dth = g_sceneChainCallCounts.dvdThread.load(std::memory_order_relaxed);
+        const uint64_t dst = g_sceneChainCallCounts.dvdStatus.load(std::memory_order_relaxed);
+        const uint64_t dret = g_sceneChainCallCounts.dvdStatusRet.load(std::memory_order_relaxed);
+        const uint64_t dcs = g_sceneChainCallCounts.dvdCmdStatus.load(std::memory_order_relaxed);
+        const uint64_t dec = g_sceneChainCallCounts.dvdErrCb.load(std::memory_order_relaxed);
+        const uint64_t drd = g_sceneChainCallCounts.dvdReady.load(std::memory_order_relaxed);
+        const uint64_t dse = g_sceneChainCallCounts.dvdStoreErr.load(std::memory_order_relaxed);
+        const uint64_t lT = g_sceneChainCallCounts.lastIndTarget.load(std::memory_order_relaxed);
         // Run gates: sSys (0x80386F60) +104 frame cnt, +105 paired flag,
         // +106/+107 enables, +108 exit code; sStatic (r13-27712) +81 selects
         // the disc-error print vs scene-continue branch. dvdA/B/C are the
@@ -781,6 +789,11 @@ void DesktopWatchdogThread() {
                   << " cc=" << cc << " sc=" << sc << " sd=" << sd
                   << " se=" << se << " sk=" << sk
                   << " de=" << de << " dh=" << dh << "]"
+                  << " dvd[dth=" << dth << " dst=" << dst
+                  << " ret=0x" << std::hex << dret << std::dec
+                  << " dcs=" << dcs << " dec=" << dec
+                  << " drd=" << drd << " dse=" << dse << "]"
+                  << " lT=0x" << std::hex << lT << std::dec
                   << " gates[g104=" << g104 << " g105=" << g105
                   << " g106=" << g106 << " g107=" << g107
                   << " g108=" << g108 << " g81=" << g81 << "]"
