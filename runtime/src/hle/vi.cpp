@@ -748,9 +748,30 @@ void DesktopWatchdogThread() {
         const uint64_t sk = g_sceneChainCallCounts.strapCheck.load(std::memory_order_relaxed);
         const uint64_t de = g_sceneChainCallCounts.discErr.load(std::memory_order_relaxed);
         const uint64_t dh = g_sceneChainCallCounts.discHalt.load(std::memory_order_relaxed);
-        const uint64_t dl = RecompMod::g_currentTranslatedExecutionAddressAnyThread.load(
-            std::memory_order_relaxed);
-        (void)dl;
+        // Run gates: sSys (0x80386F60) +104 frame cnt, +105 paired flag,
+        // +106/+107 enables, +108 exit code; sStatic (r13-27712) +81 selects
+        // the disc-error print vs scene-continue branch. dvdA/B/C are the
+        // GetDriveStatus -26004/-26008/-25872 gate words. Same readbacks as
+        // the Android scn sampler: which gate holds the scene work closed.
+        uint32_t sSys = 0, g104 = 0xFFFFFFFFu, g105 = 0xFFFFFFFFu;
+        uint32_t g106 = 0xFFFFFFFFu, g107 = 0xFFFFFFFFu, g108 = 0xFFFFFFFFu;
+        uint32_t g81 = 0xFFFFFFFFu;
+        uint32_t dvdA = 0xFFFFFFFFu, dvdB = 0xFFFFFFFFu, dvdC = 0xFFFFFFFFu;
+        if (Memory::TryRead32(0x80386F60u, sSys) && sSys != 0) {
+            uint32_t gb = 0;
+            if (Memory::TryRead32(sSys + 104u, gb)) g104 = (gb >> 24) & 0xFFu;
+            if (Memory::TryRead32(sSys + 104u, gb)) g105 = (gb >> 16) & 0xFFu;
+            if (Memory::TryRead32(sSys + 104u, gb)) g106 = (gb >> 8) & 0xFFu;
+            if (Memory::TryRead32(sSys + 104u, gb)) g107 = gb & 0xFFu;
+            if (Memory::TryRead32(sSys + 108u, gb)) g108 = (gb >> 24) & 0xFFu;
+            uint32_t sStatic = 0;
+            if (Memory::TryRead32(0x8038CC00u - 27712u, sStatic) && sStatic != 0) {
+                if (Memory::TryRead32(sStatic + 80u, gb)) g81 = (gb >> 16) & 0xFFu;
+            }
+            Memory::TryRead32(0x8038CC00u - 26004u, dvdA);
+            Memory::TryRead32(0x8038CC00u - 26008u, dvdB);
+            Memory::TryRead32(0x8038CC00u - 25872u, dvdC);
+        }
         RT_LOG(RT_TAG_VI) << "watchdog: guest PC 0x" << std::hex << pc << std::dec
                   << " presented=" << presented << "(+" << (presented - lastPresented) << ")"
                   << " retraces=" << retraces << "(+" << (retraces - lastRetraces) << ")"
@@ -759,7 +780,13 @@ void DesktopWatchdogThread() {
                   << " chain[run=" << run << " rk=" << rk << " sm=" << sm
                   << " cc=" << cc << " sc=" << sc << " sd=" << sd
                   << " se=" << se << " sk=" << sk
-                  << " de=" << de << " dh=" << dh << "]" << std::endl;
+                  << " de=" << de << " dh=" << dh << "]"
+                  << " gates[g104=" << g104 << " g105=" << g105
+                  << " g106=" << g106 << " g107=" << g107
+                  << " g108=" << g108 << " g81=" << g81 << "]"
+                  << " dvd[A=0x" << std::hex << dvdA
+                  << " B=0x" << dvdB << " C=0x" << dvdC << std::dec << "]"
+                  << std::endl;
         lastPresented = presented;
         lastRetraces = retraces;
         OS_HLE_DumpThreadsTemp();
