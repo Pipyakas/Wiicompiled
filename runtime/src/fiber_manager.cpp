@@ -806,13 +806,6 @@ void GuestFiberManager::FiberProc(void* param)
             RT_LOG(RT_TAG_OS) << "FiberProc: DISPATCH EGG::start thr=0x" << std::hex << guestThreadAddr
                       << std::dec << std::endl;
         }
-        // Temporary: direct counter witness INSIDE the fiber TU (which is
-        // provably fresh in the running exe): +2000000 per EGG::start entry.
-        // Watchdog dth therefore reads 2000000*N(entries) + 1000001*M(Run
-        // visits): M>0 proves DvdThread_main runs. Remove with the GX counters.
-        if (entryPoint == 0x8024373cu) {
-            g_sceneChainCallCounts.dvdThread.fetch_add(2000000, std::memory_order_relaxed);
-        }
         InvokeIndirectCpu(entryPoint, cpu);
         // Temporary: did the entry return (base no-op run) or switch away
         // (real Run never returns — it parks in VIWaitForRetrace)? A return
