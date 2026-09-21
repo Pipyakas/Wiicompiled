@@ -683,8 +683,40 @@ void GuestFiberManager::FiberProc(void* param)
     
     // Create a CpuContextScope for this fiber
     CpuContextScope scope(cpu);
+
+    // Snapshot the fiber's own entry register state NOW, before the deferral
+    // loop below yields: SwitchToScheduler resumes with the shared CpuContext
+    // holding a different guest fiber's registers, and the entry trampoline
+    // (r3=obj, r13=SDA, r2, r1, lr) must be the fiber's own, not leftover
+    // state from whatever ran while this fiber yielded. Snapshot the FULL
+    // register file, not just the entry contract: translated callees spill
+    // resident locals into the shared context's nonvolatiles, and the entry
+    // call below (InvokeIndirectCpu -> guards save/restore around it) would
+    // otherwise restore another fiber's residues on top of this one.
+    // NOTE: a plain struct copy is NOT enough: PPC_FPR is a union and the
+    // shared context's fpr slots may hold signaling NaNs / stale garbage
+    // from another fiber. Copy field-by-field through the double member so
+    // every slot is a well-defined value.
+    CpuContext entryCpu;
+    entryCpu.pc = cpu->pc;
+    for (int i = 0; i < 32; ++i) entryCpu.gpr[i] = cpu->gpr[i];
+    entryCpu.cr = cpu->cr;
+    entryCpu.lr = cpu->lr;
+    entryCpu.ctr = cpu->ctr;
+    entryCpu.xer = cpu->xer;
+    entryCpu.fpscr = cpu->fpscr;
+    entryCpu.srr0 = cpu->srr0;
+    entryCpu.srr1 = cpu->srr1;
+    entryCpu.msr = cpu->msr;
+    for (int i = 0; i < 32; ++i) entryCpu.fpr[i].d = cpu->fpr[i].d;
+    for (int i = 0; i < 8; ++i) entryCpu.gqr[i] = cpu->gqr[i];
+    entryCpu.hid0 = cpu->hid0;
+    entryCpu.hid1 = cpu->hid1;
+    entryCpu.hid2 = cpu->hid2;
     
     int startDeferAttempts = 0;
+    uint32_t lastDeferVtable = 0;
+    uint32_t lastDeferStartFn = 0;
     while (entryPoint == 0x8024373c) { // EGG::Thread::start
         uint32_t vtable = 0;
         uint32_t startFn = 0;
@@ -697,7 +729,8 @@ void GuestFiberManager::FiberProc(void* param)
             vtable = 0;
             startFn = 0;
         }
-
+        lastDeferVtable = vtable;
+        lastDeferStartFn = startFn;
 
         // Break only once the *derived* vtable is installed. At OSCreateThread
         // time the object may still carry the base EGG::Thread vtable
@@ -725,8 +758,25 @@ void GuestFiberManager::FiberProc(void* param)
         SwitchToScheduler();
     }
 
-    // The deferral loop above yields to the scheduler and therefore can resume
+    // The deferral loop above yields to the scheduler and therefore resumes
     // with registers from a different guest fiber in the shared CpuContext.
+    // Restore the fiber's own entry state snapshotted above (field-by-field
+    // through the double member, mirroring the snapshot), then apply the
+    // entry contract on top (r3=obj, pc/srr0=entry).
+    cpu->pc = entryCpu.pc;
+    for (int i = 0; i < 32; ++i) cpu->gpr[i] = entryCpu.gpr[i];
+    cpu->cr = entryCpu.cr;
+    cpu->lr = entryCpu.lr;
+    cpu->ctr = entryCpu.ctr;
+    cpu->xer = entryCpu.xer;
+    cpu->fpscr = entryCpu.fpscr;
+    cpu->srr1 = entryCpu.srr1;
+    cpu->msr = entryCpu.msr;
+    for (int i = 0; i < 32; ++i) cpu->fpr[i].d = entryCpu.fpr[i].d;
+    for (int i = 0; i < 8; ++i) cpu->gqr[i] = entryCpu.gqr[i];
+    cpu->hid0 = entryCpu.hid0;
+    cpu->hid1 = entryCpu.hid1;
+    cpu->hid2 = entryCpu.hid2;
     cpu->gpr[3] = entryArg;
     cpu->pc = entryPoint;
     cpu->srr0 = entryPoint;
@@ -735,7 +785,55 @@ void GuestFiberManager::FiberProc(void* param)
     // Call the translated thread entry function
     const auto* info = TranslatedFunctionRegistry::FindByAddressPtr(entryPoint);
     if (info) {
+        // Temporary: name the EGG start target the fiber is about to run
+        // (derived vtable's Run vs the base no-op), so the parked-DvdThread
+        // trace shows whether the deferral loop above actually waited for
+        // the derived vtable. Remove with the GX counters.
+        if (entryPoint == 0x8024373cu) {
+            RT_LOG(RT_TAG_OS) << "FiberProc: thr=0x" << std::hex << guestThreadAddr
+                      << " EGG::start obj=0x" << entryArg
+                      << " vt=0x" << lastDeferVtable
+                      << " run=0x" << lastDeferStartFn
+                      << " r13=0x" << cpu->gpr[13]
+                      << " r1=0x" << cpu->gpr[1]
+                      << " deferrals=" << std::dec << startDeferAttempts << std::endl;
+        }
+        // Temporary: trace whether the trampoline's jump actually reaches
+        // DvdThread_main: the post-call state below shows the fiber entry
+        // RETURNED with the derived vtable installed, yet the watchdog's dth
+        // counter never moves. Remove with the GX counters.
+        if (entryPoint == 0x8024373cu) {
+            RT_LOG(RT_TAG_OS) << "FiberProc: DISPATCH EGG::start thr=0x" << std::hex << guestThreadAddr
+                      << std::dec << std::endl;
+        }
+        // Temporary: direct counter witness INSIDE the fiber TU (which is
+        // provably fresh in the running exe): +2000000 per EGG::start entry.
+        // Watchdog dth therefore reads 2000000*N(entries) + 1000001*M(Run
+        // visits): M>0 proves DvdThread_main runs. Remove with the GX counters.
+        if (entryPoint == 0x8024373cu) {
+            g_sceneChainCallCounts.dvdThread.fetch_add(2000000, std::memory_order_relaxed);
+        }
         InvokeIndirectCpu(entryPoint, cpu);
+        // Temporary: did the entry return (base no-op run) or switch away
+        // (real Run never returns — it parks in VIWaitForRetrace)? A return
+        // here with the derived vtable installed means the trampoline's
+        // vtable read went somewhere unexpected. Remove with the GX counters.
+        if (entryPoint == 0x8024373cu) {
+            uint32_t postVt = 0, postRun = 0;
+            try {
+                postVt = Memory::Read32(entryArg);
+                if (postVt >= 0x80000000u) postRun = Memory::Read32(postVt + 0x0Cu);
+            } catch (const Memory::AccessViolation&) {}
+            RT_LOG(RT_TAG_OS) << "FiberProc: thr=0x" << std::hex << guestThreadAddr
+                      << " EGG::start RETURNED pc=0x" << cpu->pc
+                      << " lr=0x" << cpu->lr
+                      << " r1=0x" << cpu->gpr[1]
+                      << " r3=0x" << cpu->gpr[3]
+                      << " r12=0x" << cpu->gpr[12]
+                      << " ctr=0x" << cpu->ctr
+                      << " cr=0x" << cpu->cr
+                      << " vt=0x" << postVt << " run=0x" << postRun << std::dec << std::endl;
+        }
     } else {
         RT_LOG(RT_TAG_OS) << "Thread entry 0x" << std::hex << entryPoint
                   << " not found in registry!" << std::dec << std::endl;
@@ -744,30 +842,41 @@ void GuestFiberManager::FiberProc(void* param)
     // Thread entry functions normally return into OSExitThread on hardware.
     // Our host fiber call boundary observes the return directly, so complete the
     // guest OSThread lifecycle here before handing control back to the scheduler.
+    //
+    // Exception: a return from the EGG::Thread::start trampoline (0x8024373c) is
+    // the base no-op run (0x8024374c) executing before the derived constructor
+    // installed the real run target. That thread was never started: its fiber
+    // stays schedulable and its guest OSThread MUST keep its READY state, or
+    // SelectThread (which picks by guest state) will never start it once the
+    // derived vtable is installed. Only a return from a real entry retires the
+    // thread with the detach/MORIBUND lifecycle.
+    const bool neverStarted = (entryPoint == 0x8024373cu);
 
-    try {
-        RemoveGuestThreadFromQueue(guestThreadAddr);
-        const uint16_t attributes = Memory::Read16(guestThreadAddr + kThreadAttrOffset);
-        const bool detached = (attributes & 1u) != 0;
-        const uint16_t finalState = detached ? 0u : static_cast<uint16_t>(ThreadState::MORIBUND);
-        if (!detached) {
-            Memory::Write32(guestThreadAddr + kThreadExitValueOffset, 0);
+    if (!neverStarted) {
+        try {
+            RemoveGuestThreadFromQueue(guestThreadAddr);
+            const uint16_t attributes = Memory::Read16(guestThreadAddr + kThreadAttrOffset);
+            const bool detached = (attributes & 1u) != 0;
+            const uint16_t finalState = detached ? 0u : static_cast<uint16_t>(ThreadState::MORIBUND);
+            if (!detached) {
+                Memory::Write32(guestThreadAddr + kThreadExitValueOffset, 0);
+            }
+            Memory::Write16(guestThreadAddr + kThreadStateOffset, finalState);
+            WakeGuestThreadsOnQueueNoSwitch(guestThreadAddr + kThreadJoinQueueOffset);
+            if (Memory::Read32(kOSRunningContextAddr) == guestThreadAddr) {
+                Memory::Write32(kOSRunningContextAddr, 0);
+            }
+            if (Memory::Read32(kOSCurrentContextAddr) == guestThreadAddr) {
+                Memory::Write32(kOSCurrentContextAddr, 0);
+            }
+            Memory::Write32(kSchedulerReschedCounterAddr, 1);
+        } catch (const Memory::AccessViolation& e) {
+            RT_LOG(RT_TAG_OS) << "Thread return cleanup failed for 0x" << std::hex
+                      << guestThreadAddr << " at 0x" << e.address() << std::dec
+                      << " (" << e.reason() << ")" << std::endl;
         }
-        Memory::Write16(guestThreadAddr + kThreadStateOffset, finalState);
-        WakeGuestThreadsOnQueueNoSwitch(guestThreadAddr + kThreadJoinQueueOffset);
-        if (Memory::Read32(kOSRunningContextAddr) == guestThreadAddr) {
-            Memory::Write32(kOSRunningContextAddr, 0);
-        }
-        if (Memory::Read32(kOSCurrentContextAddr) == guestThreadAddr) {
-            Memory::Write32(kOSCurrentContextAddr, 0);
-        }
-        Memory::Write32(kSchedulerReschedCounterAddr, 1);
-    } catch (const Memory::AccessViolation& e) {
-        RT_LOG(RT_TAG_OS) << "Thread return cleanup failed for 0x" << std::hex
-                  << guestThreadAddr << " at 0x" << e.address() << std::dec
-                  << " (" << e.reason() << ")" << std::endl;
     }
-    
+
     // A natural return from EGG::Thread::start (0x8024373c) may be the base
     // no-op run (0x8024374c) executing before the derived constructor
     // installed the real run target - the fiber entry stays schedulable so a

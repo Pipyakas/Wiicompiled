@@ -322,6 +322,7 @@ void AdvanceRetrace(CpuContext* ctx, Clock::time_point retraceStamp, bool servic
         return;
     }
     g_diagViAdvanceCount.fetch_add(1, std::memory_order_relaxed);
+    g_vi.retraces.fetch_add(1, std::memory_order_relaxed);
 
     uint32_t preCb = 0;
     uint32_t postCb = 0;
@@ -1203,7 +1204,12 @@ extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
         if (now < target) {
             SleepPreciselyUntil(target, true);
         }
-        AdvanceRetrace(cpu, target, true);
+        // Sleep path: nothing has advanced the VI timeline (guest fibers are
+        // pinned on the retrace queue, so PollRetrace is unreachable), and
+        // AdvanceRetrace is what wakes them. Force the boundary here —
+        // this is the desktop equivalent of the Android path above, which
+        // never sleeps and advances one boundary per call.
+        VI_HLE_ForceRetrace(cpu);
     }
 #endif
     ViSetR3(cpu, 0);

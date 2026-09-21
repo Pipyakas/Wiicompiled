@@ -580,6 +580,12 @@ void OS_HLE_DumpThreadsTemp() {
             const uint32_t queue = ::Memory::Read32(it + kThreadQueueOffset);
             const uint32_t cur = (it == ::Memory::Read32(kOSCurrentContextAddr)) ? 1u : 0u;
             const uint32_t run = (it == ::Memory::Read32(kOSRunningContextAddr)) ? 1u : 0u;
+            // Temporary: guest fiber (host-side) state alongside guest state —
+            // distinguishes "the fiber is switched in somewhere" (fib=W) from
+            // "the fiber's entry returned without retiring it" (fib=Y, RUN but
+            // no host fiber owns it). Remove with the GX counters.
+            const bool fibW = Fiber::GuestFiberManager::IsInitialized()
+                && Fiber::GuestFiberManager::GetCurrentGuestThread() == it;
             // Temporary: fiber presence distinguishes "thread suspended" from
             // "fiber bookkeeping lost the thread". Remove with the GX counters.
             const bool hasFiber = Fiber::GuestFiberManager::IsInitialized()
@@ -591,8 +597,9 @@ void OS_HLE_DumpThreadsTemp() {
                       << " susp=" << susp << " prio=" << prio << " base=" << effPrio
                       << " srr0=0x" << std::hex << srr0 << " lr=0x" << lr
                       << " q=0x" << queue << std::dec
-                      << " fib=" << (hasFiber ? (fiberTerm ? "T" : "Y") : "n")
-                      << (cur ? " CUR" : "") << (run ? " RUN" : "") << std::endl;
+                       << " fib=" << (hasFiber ? (fiberTerm ? "T" : "Y") : "n")
+                       << (fibW ? "[HOST]" : "")
+                       << (cur ? " CUR" : "") << (run ? " RUN" : "") << std::endl;
         }
         RT_LOG(RT_TAG_OS) << "THRDUMP idle=" << ::Memory::Read32(kSchedulerIdleFlagAddr)
                   << " pending=0x" << std::hex << ::Memory::Read32(kSchedulerPendingFlagAddr)

@@ -72,7 +72,7 @@ struct SceneChainCallCounts {
     std::atomic<uint64_t> ind36{0};  // vtable+36
     std::atomic<uint64_t> indOther{0};
     std::atomic<uint64_t> dvdStatus{0};  // 0x80162B50 DVD::GetDriveStatus
-    std::atomic<uint64_t> dvdStatusRet{0xFFFFFFFFull};  // last r3 on return
+    std::atomic<int64_t> dvdStatusRet{0xFFFFFFFFll};  // last r3 on return (signed: -1 busy)
     std::atomic<uint64_t> dvdStoreErr{0};  // 0x801640B4 __DVDStoreErrorCode
     std::atomic<uint64_t> dvdErrCb{0};     // 0x8015EE70 cbForStateError
     std::atomic<uint64_t> dvdReady{0};     // 0x80161614 stateReady
@@ -146,7 +146,13 @@ inline void ApplyRuntimeCallOptions(uint32_t target, CpuContext* ctx) {
     case 0x80008E20u: g_sceneChainCallCounts.discHalt.fetch_add(1, std::memory_order_relaxed); break;
     // DVD liveness visits (static + indirect both flow through here; the
     // CountIndirectVtableSlot cases for these addresses only see indirect).
-    case 0x80008D18u: g_sceneChainCallCounts.dvdThread.fetch_add(1, std::memory_order_relaxed); break;
+    // Temporary: +1000000 witness per DvdThread_main visit (the +1 below is
+    // the standing counter). The watchdog's dth field reads this: dth>=
+    // 1000000 proves the dispatch reached the Run target. Remove with the GX
+    // counters.
+    case 0x80008D18u:
+        g_sceneChainCallCounts.dvdThread.fetch_add(1000001, std::memory_order_relaxed);
+        break;
     case 0x80162B50u: g_sceneChainCallCounts.dvdStatus.fetch_add(1, std::memory_order_relaxed); break;
     case 0x80162A88u: g_sceneChainCallCounts.dvdCmdStatus.fetch_add(1, std::memory_order_relaxed); break;
     case 0x8015EE70u: g_sceneChainCallCounts.dvdErrCb.fetch_add(1, std::memory_order_relaxed); break;
@@ -873,6 +879,9 @@ inline void InvokeIndirectCpu(uint32_t target, CpuContext* ctx) {
     }
     CountIndirectVtableSlot(target, cpu);
     ApplyRuntimeCallOptions(target, cpu);
+    // DVD liveness visits are counted in ApplyRuntimeCallOptions (covers
+    // static + indirect); the +1000000 witness lived here briefly while
+    // chasing a stale-header suspicion and has moved to FiberProc.
     if (TryDispatchRawCpuTarget(TranslatedFunctionRegistry::FindRawByAddressPtr(target), cpu)) {
         return;
     }

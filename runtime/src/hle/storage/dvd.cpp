@@ -978,6 +978,18 @@ extern "C" void DVDInit_8015EA1C()
     // Drive-ready marker the callback sets on the ready path; pre-seed it so
     // the error path also reads ready before the first callback.
     Memory::Write32(0x803866D4u, 1);
+    // The hardware drive queue at 0x80343230/38/40/48 keeps the self-linked
+    // empty state CompleteDvdCancelState seeds on every call above; only the
+    // cover/status words below are touched. The translated DVD state machine
+    // busy-waits on these (cover-wait, drive-state gates), so they are seeded
+    // to the cover-closed/drive-ready values the SDK leaves after a successful
+    // cover check instead of the zeros guest RAM starts with. KEEP the
+    // self-linked sentinels: __DVDCheckWaitingQueue/__DVDPopWaitingQueue
+    // compare each queue HEAD against the queue base and treat a
+    // self-referential head as "not queued"; zeroing the heads instead makes
+    // a 0 entry != base look like a queued block and the state machine
+    // fabricates a phantom waiting command whose garbage callback address
+    // (ctr=0x01800000 in the observed crash) jumps to hyperspace.
     // Pending async completion slot: 0 = none, so the callback re-drives the
     // state machine instead of dispatching a stale pointer.
     Memory::Write32(0x803866E0u, 0);

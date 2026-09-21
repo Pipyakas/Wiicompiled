@@ -457,6 +457,12 @@ extern "C" void OSSleepThread_HLE_801aa9b8(CpuContext* ctx)
         // See SchedulerCanSwitchAway: parking is only safe when SelectThread is
         // permitted to switch. Otherwise leave the thread RUNNING and the wait
         // queue untouched and let the caller's retry loop re-test its condition.
+        // (The old VI-retrace-queue exception parked here is gone: it left the
+        // caller WAITING+linked while execution continued on the same stack,
+        // and SelectThread's early exit then returned into the SAME fiber —
+        // SwitchToThread saw currentFiber == fiberHandle and no-oped — so the
+        // fiber re-entered its own OSSleepThread recursively. The park never
+        // resolved and the DvdThread spun at 0x8020FE50 forever.)
         if (!SchedulerCanSwitchAway()) {
             ReportUnparkableSleep(queuePtr, currentThread);
             OS__RestoreInterrupts_801a65d4(irqState);
