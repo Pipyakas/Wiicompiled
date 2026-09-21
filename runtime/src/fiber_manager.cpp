@@ -798,15 +798,491 @@ void GuestFiberManager::FiberProc(void* param)
                       << " r1=0x" << cpu->gpr[1]
                       << " deferrals=" << std::dec << startDeferAttempts << std::endl;
         }
-        // Temporary: trace whether the trampoline's jump actually reaches
-        // DvdThread_main: the post-call state below shows the fiber entry
-        // RETURNED with the derived vtable installed, yet the watchdog's dth
-        // counter never moves. Remove with the GX counters.
+        // Temporary: trace whether the entry call is even reached. The
+        // watchdog shows the fiber entry RETURNED with the derived vtable
+        // installed, yet the dth counter never moves — this line proves the
+        // dispatch call itself executes. Remove with the GX counters.
         if (entryPoint == 0x8024373cu) {
             RT_LOG(RT_TAG_OS) << "FiberProc: DISPATCH EGG::start thr=0x" << std::hex << guestThreadAddr
-                      << std::dec << std::endl;
+                      << " run=0x" << lastDeferStartFn << std::dec << std::endl;
         }
-        InvokeIndirectCpu(entryPoint, cpu);
+        // Temporary: catch a C++ exception escaping the translated entry.
+        // Translated bodies must never throw, but a Memory::AccessViolation
+        // (or std::bad_alloc, etc.) would unwind straight through FiberProc
+        // and silently kill the fiber — exactly the observed shape (entry
+        // logged, nothing after, fiber dead). Log-and-swallow here to prove
+        // or rule it out. Remove with the GX counters.
+        //
+        // ALSO temporary: bypass InvokeIndirectCpu's registry lookup and call
+        // the translated body directly. The dispatch counters prove nothing
+        // reaches DvdThread_main through the registry path; a direct call
+        // distinguishes "registry/dispatch lies" from "body exits instantly".
+        // Remove with the GX counters.
+        //
+        // Implemented WITHOUT a forward declaration (which collides with the
+        // TU structure here): resolve the body through the registry's raw
+        // pointer and call it directly, skipping only the counting/dispatch
+        // wrappers. If this runs the body and the normal path doesn't, the
+        // wrappers are at fault; if this also returns instantly, the body is.
+        if (entryPoint == 0x8024373cu && lastDeferStartFn == 0x80008D18u) {
+            // DvdThread worker: run the REAL trampoline path (EGG::start ->
+            // vtable -> DvdThread_main). The direct-body probe scaffolding
+            // below is RETIRED (kept for one more run behind this flag):
+            // the question it asked is answered (the body runs and parks),
+            // and per-activation double-execution skewed every downstream
+            // reading. Set kDvdDirectProbe to 1 to re-enable it.
+            constexpr bool kDvdDirectProbe = false;
+            RT_LOG(RT_TAG_OS) << "FiberProc: thr=0x" << std::hex << guestThreadAddr
+                      << " DvdThread via trampoline (obj=0x" << entryArg << ")" << std::dec
+                      << std::endl;
+            try {
+                InvokeIndirectCpu(entryPoint, cpu);
+            } catch (const std::exception& e) {
+                RT_LOG(RT_TAG_OS) << "FiberProc: thr=0x" << std::hex << guestThreadAddr
+                          << " DvdThread trampoline THREW: " << e.what() << std::dec << std::endl;
+            } catch (...) {
+                RT_LOG(RT_TAG_OS) << "FiberProc: thr=0x" << std::hex << guestThreadAddr
+                          << " DvdThread trampoline THREW unknown" << std::dec << std::endl;
+            }
+            RT_LOG(RT_TAG_OS) << "FiberProc: thr=0x" << std::hex << guestThreadAddr
+                      << " DvdThread trampoline returned r3=0x" << cpu->gpr[3] << std::dec
+                      << std::endl;
+            if (kDvdDirectProbe) {
+            // (retired probe body: disabled by the `false` below; the whole
+            // block is dead code kept for reference until the GX-counter
+            // cleanup. See flag above.)
+            const auto* rawRec =
+                TranslatedFunctionRegistry::FindRawByAddressPtr(0x80008D18u);
+            // Temporary: dump the body's first guest stack frame AFTER
+            // the direct call returns (declared function-scope so both
+            // branches below can fill it). Remove with the GX counters.
+            uint32_t postBodyFrame0 = 0, postBodyFrame1 = 0;
+            uint32_t postBodyR1 = cpu->gpr[1];
+            if (false) {
+                // DvdThread_main by hand is overkill; instead call the entry
+                // with a TRACED GetDriveStatus: wrap the raw call so the
+                // first InvokeDirectCpu<0x80162B50u> inside the body is
+                // visible. The body itself is unmodified — this just proves
+                // whether execution reaches past the prologue. Remove with
+                // the GX counters.
+                RT_LOG(RT_TAG_OS) << "FiberProc: direct body at 0x" << std::hex
+                          << reinterpret_cast<uintptr_t>(rawRec->entry) << std::dec << std::endl;
+                // Temporary: pre-seed the body's FIRST stack frame manually.
+                // The body opens with ResolveRangeHost(r1-48, 56B, write) +
+                // writes to [r1-48..r1+4]. If r1 points at an unmapped guard
+                // region the writes fault, MemoryInline throws, and the fiber
+                // dies silently. Writing the frame marker here first proves
+                // or rules out a bad incoming stack pointer. The values are
+                // exactly what the prologue would write (backchain + LR
+                // slot), so the body re-write is idempotent. Remove with the
+                // GX counters.
+                try {
+                    Memory::Write32(cpu->gpr[1] - 48u, cpu->gpr[1]);
+                    RT_LOG(RT_TAG_OS) << "FiberProc: stack probe write ok r1=0x" << std::hex
+                              << cpu->gpr[1] << std::dec << std::endl;
+                } catch (const std::exception& e) {
+                    RT_LOG(RT_TAG_OS) << "FiberProc: stack probe write THREW: " << e.what() << std::endl;
+                } catch (...) {
+                    RT_LOG(RT_TAG_OS) << "FiberProc: stack probe write THREW unknown" << std::endl;
+                }
+                // Temporary: ResolveRangeHost pre-check for the body's frame.
+                // If the resolver returns null here, the body's prologue
+                // throws before executing a single guest instruction.
+                // Remove with the GX counters.
+                {
+                    uint8_t* probe = MemoryInline::ResolveRangeHost(
+                        cpu->gpr[1] - 48u, 0, 56u, false, true);
+                    RT_LOG(RT_TAG_OS) << "FiberProc: frame resolve "
+                              << (probe ? "OK" : "NULL") << " r1=0x" << std::hex
+                              << cpu->gpr[1] << std::dec << std::endl;
+                }
+                // Temporary: call GetDriveStatus DIRECTLY (it is pure
+                // translated code, no HLE override). If the direct status
+                // call works from here but the body still returns instantly,
+                // the body never reaches its own status call. Remove with the
+                // GX counters.
+                {
+                    const auto* stRec =
+                        TranslatedFunctionRegistry::FindRawByAddressPtr(0x80162B50u);
+                    RT_LOG(RT_TAG_OS) << "FiberProc: status record "
+                              << ((stRec && stRec->entry) ? "OK" : "MISSING") << std::endl;
+                    if (stRec && stRec->entry) {
+                        const uint32_t savedR3 = cpu->gpr[3];
+                        const uint32_t savedR1 = cpu->gpr[1];
+                        const uint32_t savedR13 = cpu->gpr[13];
+                        // UPDATE 7: read the gate the body's way (r13-relative
+                        // flat read) IMMEDIATELY before the direct call, with
+                        // the same r13 the body will use. If THIS reads 1 and
+                        // the call still returns -1, the zero is produced
+                        // INSIDE the call (interrupts off/on clobber, or the
+                        // status path itself writes the gate). Remove with the
+                        // GX counters.
+                        //
+                        // UPDATE 8: body-way pre-call reads 1, call returns -1.
+                        // The ONLY instruction between the gate read and the
+                        // -1 return is SetCRResident + the branch test. Either
+                        // (a) the gate read inside the call sees a DIFFERENT
+                        // value (r13 changed by OSDisableInterrupts? no — it
+                        // doesn't touch r13... but UpdateCurrentContextInterruptFlag
+                        // WRITES guest memory at [currentContext+0x1A2]! If
+                        // currentContext is STALE (points at a recycled struct
+                        // overlapping the DVD globals?), that write could
+                        // stomp the gate), or (b) SetCRResident/branch is
+                        // miscompiled. Test (b) first: replicate the exact
+                        // compare+branch here with the same values.
+                        uint32_t bodyWayPre = 0xDEADu;
+                        try {
+                            bodyWayPre = MemoryInline::FlatRead32(cpu->gpr[13] - 26004u);
+                        } catch (...) {}
+                        RT_LOG(RT_TAG_OS) << "FiberProc: body-way gate pre-call=0x" << std::hex
+                                  << bodyWayPre << " r13=0x" << cpu->gpr[13] << std::dec
+                                  << std::endl;
+                        {
+                            uint32_t crCopy = cpu->cr;
+                            uint32_t xerCopy = cpu->xer;
+                            SetCRResident(crCopy, xerCopy, 0, static_cast<int32_t>(bodyWayPre),
+                                          static_cast<int32_t>(0));
+                            const bool eqTaken = (crCopy & 0x20000000u) != 0;
+                            RT_LOG(RT_TAG_OS) << "FiberProc: replica cmp: cr=0x" << std::hex
+                                      << crCopy << " eqTaken=" << eqTaken << std::dec << std::endl;
+                        }
+                        // UPDATE 9: replica cmp gives cr=0x40000000 (GT set,
+                        // EQ clear) — CORRECT for 1 vs 0. So the compare and
+                        // branch logic are fine, and the body's own gate read
+                        // must ALSO see 1... yet the body returns -1. The ONLY
+                        // remaining difference between the replica and the
+                        // body: the body runs OSDisableInterrupts FIRST (via
+                        // InvokeDirectCpu<0x801A65ACu>), and the gate read
+                        // happens AFTER. If OSDisableInterrupts (or rather
+                        // UpdateCurrentContextInterruptFlag inside it)
+                        // CLOBBERS r13 or the gate word, the body's read sees
+                        // garbage. Replicate the HLE body inline here (it only
+                        // flips a host flag + writes one guest halfword) and
+                        // re-read the gate the body way immediately after.
+                        // (Can't call the HLE functions directly: their
+                        // extern "C" declarations collide with this TU's
+                        // namespace structure.)
+                        {
+                            const uint32_t r13pre = cpu->gpr[13];
+                            uint32_t curCtx = 0;
+                            (void)MemoryInline::TryReadGuestScalar(0x800000D4u, curCtx);
+                            if (curCtx != 0) {
+                                uint16_t mf = 0;
+                                if (MemoryInline::TryReadGuestScalar(curCtx + 0x1A2u, mf)) {
+                                    mf = static_cast<uint16_t>(mf & ~0x0002u);
+                                    MemoryInline::TryWriteGuestScalar(curCtx + 0x1A2u, mf);
+                                }
+                            }
+                            uint32_t bodyWayPost = 0xDEADu;
+                            try {
+                                bodyWayPost = MemoryInline::FlatRead32(cpu->gpr[13] - 26004u);
+                            } catch (...) {}
+                        // UPDATE 10: post-disable gate STILL 1, r13 untouched,
+                        // curCtx = the DvdThread itself. OSDisableInterrupts is
+                        // innocent. Remaining suspect inside the direct status
+                        // call: OSSleepThread? No — GetDriveStatus never
+                        // sleeps. What DOES run inside: InvokeDirectCpu's
+                        // PpcNonvolatileGprGuard (saves/restores r14-r31
+                        // around the call — harmless)... and
+                        // ApplyRuntimeCallOptions (counter bump — harmless).
+                        // Then the body: prologue writes, OSDisableInterrupts
+                        // (proven innocent), gate read... The gate read MUST
+                        // see 1. Unless the body's r13 is NOT 0x8038CC00 at
+                        // that point: the direct status call restores r13
+                        // from savedR13 AFTER the call — but DURING the call
+                        // the body itself reloads r13 from ctx AFTER its own
+                        // InvokeDirectCpu<OSDisableInterrupts> returns... and
+                        // THAT inner call's guard/scope dance could leave a
+                        // STALE r13 in ctx if CpuContextScope restores the
+                        // wrong previous_. Nested scopes: FiberProc's scope
+                        // (previous_=main's cpu) -> ... The inner
+                        // InvokeDirectCpu creates ANOTHER CpuContextScope on
+                        // the SAME cpu pointer: previous_ = cpu (itself!),
+                        // destructor restores g_currentCpuContext = cpu
+                        // (fine) — but PpcNonvolatileGprGuard saves r14-r31,
+                        // NOT r13! And KnownNativeCpuCall path ALSO wraps
+                        // with PpcNonvolatileGprGuard... r13 is VOLATILE in
+                        // the PPC ABI (r13 is reserved/SDA — actually r13 IS
+                        // reserved, NOT volatile!). Hmm, r13 is the SDA base:
+                        // call-clobbered or not, SOME nested call between the
+                        // gate seed and the gate read clobbers it. Dump r13
+                        // at THREE points: before direct call, inside (can't),
+                        // after. After==before (proven: r13after=0x8038CC00).
+                        // So r13 is FINE across the whole direct call. The
+                        // gate is 1 before. The call returns -1. CONTRADICTION
+                        // unless the -1 comes from somewhere OTHER than the
+                        // first gate. RE-READ the body: -1 (r30=-1) is ALSO
+                        // set at... only loc_80162B78. And loc_80162B78 is
+                        // reached ONLY when cr-EQ is CLEAR after comparing
+                        // gate vs 0. Gate=1 -> SetCRResident(cr,1,0) -> GT set,
+                        // EQ CLEAR -> branch NOT taken... wait, re-read:
+                        // "if ((cr & 0x20000000u) != 0) goto loc_80162B80" —
+                        // taken when EQ SET. Gate=1: EQ CLEAR -> FALL THROUGH
+                        // to loc_80162B78: r30 = -1!!! THE BRANCH IS INVERTED
+                        // FROM WHAT I ASSUMED. cmpne-vs-0-falls-through means
+                        // NONZERO gate -> -1 PATH. Let me recheck: BEQ target
+                        // is 0x80162B80 (the NEXT gate). Gate=1 (nonzero):
+                        // EQ clear -> do NOT branch -> fall into r30=-1,
+                        // return -1. GATE=0: EQ set -> branch to next gate.
+                        // SO -1 MEANS "GATE NONZERO" — DRIVE BUSY. And gate=1
+                        // (seeded "idle+ready") gives -1/BUSY?! The seed
+                        // values are WRONG: -26004=1 must mean BUSY (or "a
+                        // command is active"), and the drive goes ready when
+                        // it reads 0! DVDInit's "seed both nonzero" comment
+                        // has the polarity BACKWARDS for -26004.
+                        RT_LOG(RT_TAG_OS) << "FiberProc: post-disable gate=0x" << std::hex
+                                  << bodyWayPost << " r13pre=0x" << r13pre
+                                  << " r13post=0x" << cpu->gpr[13]
+                                  << " curCtx=0x" << curCtx << std::dec << std::endl;
+                        }
+                        try {
+                            stRec->entry(cpu);
+                            RT_LOG(RT_TAG_OS) << "FiberProc: direct GetDriveStatus returned r3=0x"
+                                      << std::hex << cpu->gpr[3]
+                                      << " r13after=0x" << cpu->gpr[13]
+                                      << " r1after=0x" << cpu->gpr[1] << std::dec << std::endl;
+                        } catch (const std::exception& e) {
+                            RT_LOG(RT_TAG_OS) << "FiberProc: direct GetDriveStatus THREW: "
+                                      << e.what() << std::endl;
+                        } catch (...) {
+                            RT_LOG(RT_TAG_OS) << "FiberProc: direct GetDriveStatus THREW unknown"
+                                      << std::endl;
+                        }
+                        cpu->gpr[3] = savedR3;
+                        cpu->gpr[1] = savedR1;
+                        cpu->gpr[13] = savedR13;
+                    }
+                }
+                // Temporary: enter the BODY with its r1 already consumed.
+                // The body opens with r1 -= 48 and immediately calls
+                // GetDriveStatus — which itself does r1 -= 16. If EITHER
+                // frame underflows the stack (guard page / unmapped), the
+                // throw happens before any guest-visible work. Pre-extend
+                // r1 by the combined 64 bytes here: if the body then runs,
+                // the incoming stack pointer was the killer. Remove with the
+                // GX counters.
+                //
+                // DISABLED for this run (set to 0): the pre-extension moves
+                // r1 but the body's prologue writes its frame at the MOVED
+                // r1, so the frame dump below reads the wrong address. Keep
+                // r1 untouched to get a clean frame read.
+                // cpu->gpr[1] -= 64u;
+                // RT_LOG(RT_TAG_OS) << "FiberProc: pre-extended r1 to 0x" << std::hex
+                //           << cpu->gpr[1] << std::dec << std::endl;
+                // Temporary: dump the DiscCheckThread object words the body
+                // itself reads/writes: +72 (GetDriveStatus result store),
+                // +80/+81 (the Run disc gate). Read BEFORE and AFTER the
+                // direct call: if +72 changes, the body reached its first
+                // status poll; if +80/+81 change, it reached the gate logic.
+                // Remove with the GX counters.
+                postBodyR1 = cpu->gpr[1];
+                uint32_t dcPre72 = 0, dcPre80 = 0, dcPre81 = 0;
+                try {
+                    dcPre72 = Memory::Read32(entryArg + 72u);
+                    dcPre80 = Memory::Read32(entryArg + 80u);
+                    dcPre81 = Memory::Read8(entryArg + 81u);
+                } catch (...) {}
+                RT_LOG(RT_TAG_OS) << "FiberProc: DvdThread obj pre: +72=0x" << std::hex
+                          << dcPre72 << " +80=0x" << dcPre80 << " +81=0x" << dcPre81
+                          << std::dec << std::endl;
+                try {
+                    rawRec->entry(cpu);
+                } catch (const std::exception& e) {
+                    RT_LOG(RT_TAG_OS) << "FiberProc: direct DvdThread_main THREW: " << e.what() << std::endl;
+                } catch (...) {
+                    RT_LOG(RT_TAG_OS) << "FiberProc: direct DvdThread_main THREW unknown" << std::endl;
+                }
+                try {
+                    postBodyFrame0 = Memory::Read32(postBodyR1 - 48u);
+                    postBodyFrame1 = Memory::Read32(postBodyR1 - 44u);
+                } catch (...) {}
+            } // end retired kDvdDirectProbe block (see flag above)
+        } // end DvdThread EGG-start branch
+        // (retired probe scaffolding deleted; the trampoline path above is
+        // the live DvdThread entry. The neverStarted/RETURNED handling below
+        // is shared by all EGG::start fibers.)
+        // Temporary: did the entry return (base no-op run) or switch away
+            // Temporary: post-call object words (see pre-call read above).
+            // Remove with the GX counters.
+            try {
+                const uint32_t dcPost72 = Memory::Read32(entryArg + 72u);
+                const uint32_t dcPost80 = Memory::Read32(entryArg + 80u);
+                const uint32_t dcPost81 = Memory::Read8(entryArg + 81u);
+                RT_LOG(RT_TAG_OS) << "FiberProc: DvdThread obj post: +72=0x" << std::hex
+                          << dcPost72 << " +80=0x" << dcPost80 << " +81=0x" << dcPost81
+                          << std::dec << std::endl;
+            } catch (...) {}
+            // Temporary: re-enter the fiber's OWN entry (the EGG::start
+            // trampoline) after the direct body call, so the trampoline's
+            // jump runs with the object fully polled (+72=5). On the
+            // re-entry the deferral loop breaks immediately (derived vtable
+            // is installed) and the trampoline jumps to DvdThread_main for
+            // its second iteration — which parks in VIWaitForRetrace now
+            // that the retrace path advances one boundary per call. This
+            // keeps the DvdThread alive across frames instead of returning
+            // after one poll. Remove with the GX counters (the real fix is
+            // making the normal dispatch path reach the body).
+            //
+            // NO — simpler and closer to hardware: just keep calling the
+            // body directly while it keeps parking. Each body call now ends
+            // in VIWaitForRetrace (one boundary per call, returns after
+            // advancing), so looping the body IS the thread's main loop.
+            // Cap the iterations so one fiber activation can't monopolize
+            // the scheduler; the fiber gets re-entered every frame anyway.
+            //
+            // UPDATE: the keep-loop runs exactly once (+72=5 already set by
+            // the first direct call, so the loop body never re-executes).
+            // The thread is alive and parked, but the SCENE still takes the
+            // disc-error branch (g81=1). The DvdThread's job is therefore
+            // NOT just polling GetDriveStatus — something else must observe
+            // the polled state and clear the Run gate. Keep the single poll
+            // (it seeds +72/+80/+81) and let the scene tell us what else it
+            // waits for. The keep-loop stays but with a zero cap: it now
+            // only logs.
+            //
+            // UPDATE 2: the scene gate is NOT +81 — it is a VALUE the scene
+            // reads at sStatic+80 (g81 = (word >> 16) & 0xFF = byte +81).
+            // The poll loop's exit condition (+72==5) fires on the FIRST
+            // iteration because GetDriveStatus returns -1 (busy), and the -1
+            // path writes +72=5 ("not ready, keep waiting") — which our
+            // keep-loop mistakes for "drive ready". The REAL ready signal is
+            // GetDriveStatus returning 0/1 with the cover state settled.
+            // Loop until the STATUS RETURN (not +72) indicates the drive is
+            // actually ready: keep polling while ret == -1 or 8.
+            //
+            // UPDATE 3: 200 polls all return -1, and -1 comes from the FIRST
+            // gate (-26004 == 0, "drive busy"), NOT from the waiting queue.
+            // DVDInit seeds -26004=1, so something zeroes it between the seed
+            // and the first poll. The writer scan shows the ONLY -26004
+            // writer in translated code is cbForStateError's error path
+            // (func_8015EE70: writes -26004=1 actually — sets busy, not
+            // clears). So the zero must come from the HOST side: the
+            // CompleteDvdCancelState zero at 0x80386668 (-26008), or... wait,
+            // -26004 is 0x8038666C, seeded 1 at DVDInit line 927 AND line 927
+            // runs on EVERY DVDInit call — but DVDInit early-returns when
+            // g_dvdInitialized. UNLESS the DvdThread fiber ran BEFORE DVDInit
+            // completed (it didn't — fiber runs after boot). Read the actual
+            // gate words here to see which one is zero, instead of guessing.
+            //
+            // UPDATE 4: gates read -26004=1, -26008=1 — BOTH SEEDED — yet the
+            // very next GetDriveStatus call returns -1, which ONLY happens
+            // when the -26004 read inside the body sees 0. The gate read and
+            // the body's gate read disagree: the body's r13 is STALE. The
+            // direct status call above saves/restores r13 around the call,
+            // but the restore uses savedR13 — captured from cpu->gpr[13] at
+            // FiberProc time. If the body's GetDriveStatus path CLOBBERED
+            // r13 (or the save/restore itself is lossy), every subsequent
+            // poll reads the wrong address. Dump r13 before/after the direct
+            // call to prove it.
+            {
+                uint32_t gateA = 0xDEADu, gateB = 0xDEADu, gateC = 0xDEADu;
+                try {
+                    gateA = Memory::Read32(0x8038666Cu);
+                    gateB = Memory::Read32(0x80386668u);
+                    gateC = Memory::Read32(0x80386670u - 0xCu + 0xCu);
+                } catch (...) {}
+                RT_LOG(RT_TAG_OS) << "FiberProc: DVD gates pre-poll: -26004=0x" << std::hex
+                          << gateA << " -26008=0x" << gateB << std::dec << std::endl;
+                RT_LOG(RT_TAG_OS) << "FiberProc: r13 fiber=0x" << std::hex << cpu->gpr[13]
+                          << " SDA1=0x8038CC00" << std::dec << std::endl;
+                // UPDATE 5: r13 is CORRECT (0x8038CC00) and both gates read 1
+                // via Memory::Read32 — yet the body's FlatRead32 sees 0. The
+                // difference between the two reads: Memory::Read32 (checked,
+                // goes through the page table) vs MemoryInline::FlatRead32
+                // (raw host pointer, byte-swapped). If the FLAT VIEW of that
+                // page is stale (page committed but flat mapping not updated,
+                // or the write went to a different backing store), the flat
+                // read returns the pre-seed zero while the checked read
+                // returns 1. Read the same address BOTH ways here to prove it.
+                //
+                // UPDATE 6: checked=flat=1. Both host reads agree the gate is
+                // 1. So the body's FlatRead32(r13 + -26004) MUST also see 1
+                // ... unless r13 is not what we think INSIDE the body. The
+                // direct status call saves/restores r13 around the call, but
+                // the FIRST direct call (the probe above, "direct
+                // GetDriveStatus returned r3=-1") runs with the FIBER's r13 —
+                // and GetDriveStatus itself may CLOBBER r13 (it only lists
+                // r3/r4/r13/r30/r31 as ABI in/out, and the body spill code
+                // restores r13 from ctx AFTER the call — wait, it does:
+                // "r13 = ctx->gpr[13]" after InvokeDirectCpu. So r13 survives
+                // ... unless the clobber happens INSIDE GetDriveStatus via
+                // OSSleepThread/SelectThread switching to ANOTHER fiber that
+                // leaves its own r13 in the shared context. The body then
+                // resumes with the WRONG r13 and reads gate from a wrong
+                // address (=0). Dump r13 immediately after the direct status
+                // call returns: if it changed, the fiber switch stole it.
+                {
+                    uint32_t viaChecked = 0xDEADu, viaFlat = 0xDEADu;
+                    try { viaChecked = Memory::Read32(0x8038666Cu); } catch (...) {}
+                    try { viaFlat = MemoryInline::FlatRead32(0x8038666Cu); } catch (...) {}
+                    RT_LOG(RT_TAG_OS) << "FiberProc: -26004 checked=0x" << std::hex
+                              << viaChecked << " flat=0x" << viaFlat << std::dec << std::endl;
+                }
+                int dvdKeeps = 0;
+                for (;;) {
+                    const auto* stRec =
+                        TranslatedFunctionRegistry::FindRawByAddressPtr(0x80162B50u);
+                    if (!stRec || !stRec->entry) break;
+                    const uint32_t savedR3 = cpu->gpr[3];
+                    const uint32_t savedR1 = cpu->gpr[1];
+                    const uint32_t savedR13 = cpu->gpr[13];
+                    int32_t status = -99;
+                    try {
+                        stRec->entry(cpu);
+                        status = static_cast<int32_t>(cpu->gpr[3]);
+                    } catch (...) { status = -99; }
+                    cpu->gpr[3] = savedR3;
+                    cpu->gpr[1] = savedR1;
+                    cpu->gpr[13] = savedR13;
+                    if (dvdKeeps == 0) {
+                        RT_LOG(RT_TAG_OS) << "FiberProc: dvd status poll0 ret=" << status
+                                  << std::endl;
+                    }
+                    // -1 = busy, 8 = not ready: keep polling. Anything else
+                    // (0 idle, 1/4/6/11 states) means the drive answered.
+                    if (status != -1 && status != 8) {
+                        RT_LOG(RT_TAG_OS) << "FiberProc: dvd status settled ret=" << status
+                                  << " after " << std::dec << dvdKeeps << " polls" << std::endl;
+                        break;
+                    }
+                    if (++dvdKeeps >= 200) {
+                        RT_LOG(RT_TAG_OS) << "FiberProc: dvd status still not ready after 200 polls"
+                                  << std::endl;
+                        break;
+                    }
+                    break; // retired: re-polled the body here; now single-poll only
+                }
+                RT_LOG(RT_TAG_OS) << "FiberProc: dvd status poll loop done" << std::endl;
+            }
+            // Temporary: THE FIX CANDIDATE — loop the body until its +72
+            // gate reads "ready" (5), exactly as the game expects: on
+            // hardware the DvdThread runs forever, polling GetDriveStatus
+            // each iteration and parking in VIWaitForRetrace between polls.
+            // Our fiber entry returns after ONE iteration because the body's
+            // VIWaitForRetrace HLE path returns instead of parking (desktop
+            // sleep path). Loop here: re-invoke the body while +72 != 5,
+            // capped so a wedged drive can't hang the fiber forever.
+            // Remove with the GX counters (the real fix belongs in the
+            // VIWaitForRetrace/scheduler path).
+            //
+            // DISABLED: +72==5 after the FIRST poll (the -1/busy path writes
+            // it as "keep waiting", not "ready"), so this loop always runs
+            // zero iterations. The status-return loop above is the live one.
+            {
+                RT_LOG(RT_TAG_OS) << "FiberProc: dvd poll loop skipped (+72 gate is write-once)"
+                          << std::endl;
+            }
+        } else {
+        try {
+            InvokeIndirectCpu(entryPoint, cpu);
+        } catch (const std::exception& e) {
+            RT_LOG(RT_TAG_OS) << "FiberProc: thr=0x" << std::hex << guestThreadAddr
+                      << " entry 0x" << entryPoint << " THREW: " << e.what() << std::dec << std::endl;
+        } catch (...) {
+            RT_LOG(RT_TAG_OS) << "FiberProc: thr=0x" << std::hex << guestThreadAddr
+                      << " entry 0x" << entryPoint << " THREW unknown" << std::dec << std::endl;
+        }
+        }
         // Temporary: did the entry return (base no-op run) or switch away
         // (real Run never returns — it parks in VIWaitForRetrace)? A return
         // here with the derived vtable installed means the trampoline's

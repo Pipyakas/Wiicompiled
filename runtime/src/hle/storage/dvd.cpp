@@ -923,8 +923,16 @@ extern "C" void DVDInit_8015EA1C()
     if (g_dvdInitialized) return;
     CompleteDvdCancelState();
     Memory::Write32(0x80386730u, 0x80343230u);
+    // -26004 (drive-busy gate): 0 = idle (GetDriveStatus proceeds to the
+    // -26008 gate), nonzero = busy (early return -1). The SDK clears it when
+    // no command is active; CompleteDvdCancelState above already zeroes the
+    // cancel/resume words, so leave it 0 = idle.
+    // -26008 (drive-ready gate): 0 = not ready (early return 8, which is what
+    // DvdThread polls for while waiting for cover handling), nonzero = ready.
+    // Seed ready: with no cover ever opening on desktop, the cover-wait
+    // completes immediately and the state machine walks to ready.
     Memory::Write32(0x80386668u, 1);
-    Memory::Write32(0x8038666Cu, 1);
+    Memory::Write32(0x8038666Cu, 0);
     // The scan below builds g_fileEntries incrementally, so a re-entrant call
     // must not start a second scan on top of a half-built index and duplicate
     // every entry.
@@ -978,18 +986,10 @@ extern "C" void DVDInit_8015EA1C()
     // Drive-ready marker the callback sets on the ready path; pre-seed it so
     // the error path also reads ready before the first callback.
     Memory::Write32(0x803866D4u, 1);
-    // The hardware drive queue at 0x80343230/38/40/48 keeps the self-linked
-    // empty state CompleteDvdCancelState seeds on every call above; only the
-    // cover/status words below are touched. The translated DVD state machine
-    // busy-waits on these (cover-wait, drive-state gates), so they are seeded
-    // to the cover-closed/drive-ready values the SDK leaves after a successful
-    // cover check instead of the zeros guest RAM starts with. KEEP the
-    // self-linked sentinels: __DVDCheckWaitingQueue/__DVDPopWaitingQueue
-    // compare each queue HEAD against the queue base and treat a
-    // self-referential head as "not queued"; zeroing the heads instead makes
-    // a 0 entry != base look like a queued block and the state machine
-    // fabricates a phantom waiting command whose garbage callback address
-    // (ctr=0x01800000 in the observed crash) jumps to hyperspace.
+    // The drive queues at 0x80343230/38/40/48 are seeded empty (head==tail
+    // ==0) by InitDvdWaitingQueues via CompleteDvdCancelState above: zero
+    // heads are empty for every reader (see the comment there). Do NOT
+    // re-seed them here.
     // Pending async completion slot: 0 = none, so the callback re-drives the
     // state machine instead of dispatching a stale pointer.
     Memory::Write32(0x803866E0u, 0);

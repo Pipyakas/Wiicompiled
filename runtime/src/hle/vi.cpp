@@ -1176,6 +1176,25 @@ extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
             retraceCount = g_vi.retraceCount;
         }
 
+        // Poll for already-due retraces, then sleep-park on the retrace
+        // queue when none is due; the scheduler idle loop (VI_HLE_PollRetrace
+        // + ProcessTimerEvents) advances the timeline and wakes the park.
+        // The old ForceRetrace-here approach ran the whole AdvanceRetrace
+        // (wake + callbacks + Aurora frame work) from INSIDE the DvdThread
+        // fiber while the scheduler-disable count was raised, starving the
+        // threads the wake was for.
+        VI_HLE_PollRetrace(cpu);
+
+        {
+            std::lock_guard<std::mutex> lock(g_viMutex);
+            EnsureInitializedLocked();
+            if (g_vi.retraceCount != retraceCount) {
+                OS__RestoreInterrupts_801a65d4(irqState);
+                ViSetR3(cpu, 0);
+                return;
+            }
+        }
+
         do {
             cpu->gpr[3] = kViRetraceQueueAddr;
             OSSleepThread_HLE_801aa9b8(cpu);
@@ -1204,11 +1223,6 @@ extern "C" void VIWaitForRetrace_HLE_801b99ec(CpuContext* ctx)
         if (now < target) {
             SleepPreciselyUntil(target, true);
         }
-        // Sleep path: nothing has advanced the VI timeline (guest fibers are
-        // pinned on the retrace queue, so PollRetrace is unreachable), and
-        // AdvanceRetrace is what wakes them. Force the boundary here —
-        // this is the desktop equivalent of the Android path above, which
-        // never sleeps and advances one boundary per call.
         VI_HLE_ForceRetrace(cpu);
     }
 #endif
