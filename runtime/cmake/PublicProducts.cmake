@@ -4,15 +4,20 @@
 # functions are compiled once into mkw_base_shared; only callers whose direct
 # ABI differs between profiles receive small base/RR variants.
 
-set(DATA_INIT_FILE "${MKW_RUNTIME_SOURCE_DIR}/../generated/data_sections_init.cpp")
-set(DATA_INIT_BLOB_ASM "${MKW_RUNTIME_SOURCE_DIR}/../generated/data_sections_init_blobs.S")
+if(NOT DEFINED MKW_TRANSLATED_GENERATED_ROOT)
+    set(MKW_TRANSLATED_GENERATED_ROOT "generated")
+endif()
+set(MKW_GENERATED_DIR "${MKW_RUNTIME_SOURCE_DIR}/../${MKW_TRANSLATED_GENERATED_ROOT}")
+
+set(DATA_INIT_FILE "${MKW_GENERATED_DIR}/data_sections_init.cpp")
+set(DATA_INIT_BLOB_ASM "${MKW_GENERATED_DIR}/data_sections_init_blobs.S")
 if(EXISTS "${DATA_INIT_FILE}")
     list(APPEND SOURCES "${DATA_INIT_FILE}")
 endif()
 # Crash-report symbolization table emitted by generate-data-init. The stub
 # (deliberately outside the globbed src/ tree so it is never picked up twice)
 # keeps link succeeding when the generated table has not been produced yet.
-set(GUEST_SYMBOL_TABLE_FILE "${MKW_RUNTIME_SOURCE_DIR}/../generated/guest_symbol_table.cpp")
+set(GUEST_SYMBOL_TABLE_FILE "${MKW_GENERATED_DIR}/guest_symbol_table.cpp")
 if(EXISTS "${GUEST_SYMBOL_TABLE_FILE}")
     list(APPEND SOURCES "${GUEST_SYMBOL_TABLE_FILE}")
 else()
@@ -42,8 +47,10 @@ function(mkw_configure_object_target target)
         # instead of a ../ chain whose depth depends on the includer.
         "${MKW_RUNTIME_SOURCE_DIR}/.."
         "${MKW_RUNTIME_SOURCE_DIR}/../aurora-main/include")
+    # SDA bases live in the active translator tree's RuntimeConfig.h (PAL vs USA).
     target_compile_definitions(${target} PRIVATE
-        TARGET_PC)
+        TARGET_PC
+        "MKW_RUNTIME_CONFIG_HEADER=\"${MKW_TRANSLATED_GENERATED_ROOT}/RuntimeConfig.h\"")
     set_target_properties(${target} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 endfunction()
 
@@ -185,7 +192,8 @@ function(mkw_configure_product target)
         "${MKW_RUNTIME_SOURCE_DIR}/.."
         "${MKW_RUNTIME_SOURCE_DIR}/../aurora-main/include")
     target_compile_definitions(${target} PRIVATE
-        SDL_MAIN_HANDLED _DISABLE_STRING_ANNOTATION _DISABLE_VECTOR_ANNOTATION TARGET_PC)
+        SDL_MAIN_HANDLED _DISABLE_STRING_ANNOTATION _DISABLE_VECTOR_ANNOTATION TARGET_PC
+        "MKW_RUNTIME_CONFIG_HEADER=\"${MKW_TRANSLATED_GENERATED_ROOT}/RuntimeConfig.h\"")
     target_compile_features(${target} PRIVATE cxx_std_20)
     mkw_apply_common_compile_options(${target})
     # The dispatch-table and registration shards compile inside the product target itself and

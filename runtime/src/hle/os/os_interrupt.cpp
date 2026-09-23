@@ -236,12 +236,21 @@ extern "C" uint32_t SetInterruptMask_801a66e0(uint32_t mask, uint32_t enable)
 PPC_NATIVE_OVERRIDE(801A65AC, OS__DisableInterrupts_801a65ac, int32_t, (), ());
 PPC_NATIVE_OVERRIDE(801A65C0, OS__EnableInterrupts_801a65c0, int32_t, (), ());
 PPC_NATIVE_OVERRIDE(801A65D4, OS__RestoreInterrupts_801a65d4, int32_t, (int32_t level), (level));
+// USA leaves (mfmsr/mtmsr) — heavily called (882 / 9 / 1120 bls).
+REGISTER_NATIVE_FUNCTION(0x801A650C, OS__DisableInterrupts_801a65ac);
+REGISTER_NATIVE_FUNCTION(0x801A6520, OS__EnableInterrupts_801a65c0);
+REGISTER_NATIVE_FUNCTION(0x801A6534, OS__RestoreInterrupts_801a65d4);
 PPC_NATIVE_OVERRIDE(801A661C, OS____InterruptInit_801a661c, uint32_t, (uint32_t r3, uint32_t r4, uint32_t r5, uint32_t r6, uint32_t r7, uint32_t r8), (r3, r4, r5, r6, r7, r8));
+REGISTER_NATIVE_FUNCTION(0x801A657C, OS____InterruptInit_801a661c); // USA
 PPC_NATIVE_OVERRIDE(801A66E0, SetInterruptMask_801a66e0, uint32_t, (uint32_t mask, uint32_t enable), (mask, enable));
+REGISTER_NATIVE_FUNCTION(0x801A6640, SetInterruptMask_801a66e0); // USA
 PPC_NATIVE_OVERRIDE(801A00E0, OS__ExceptionInit_801a00e0, uint32_t, (uint32_t r3, uint32_t r4, uint32_t r5, uint32_t r6, uint32_t r7, uint32_t r8, uint32_t r20), (r3, r4, r5, r6, r7, r8, r20));
+REGISTER_NATIVE_FUNCTION(0x801A0040, OS__ExceptionInit_801a00e0); // USA
 PPC_NATIVE_OVERRIDE(80168FA0, EXIInit_80168fa0, uint32_t, (), ());
 REGISTER_NATIVE_FUNCTION(0x801A65F8, __OSSetInterruptHandler_801a65f8_hle);
+REGISTER_NATIVE_FUNCTION(0x801A6558, __OSSetInterruptHandler_801a65f8_hle); // USA
 REGISTER_NATIVE_FUNCTION(0x801A69BC, __OSUnmaskInterrupts_801a69bc_hle);
+REGISTER_NATIVE_FUNCTION(0x801A691C, __OSUnmaskInterrupts_801a69bc_hle); // USA
 
 // OS____MaskInterrupts (0x801a693c): stubbed out because its verification loop reads MMIO
 // registers we don't emulate, which would spin forever.
@@ -273,6 +282,7 @@ extern "C" uint32_t OS____MaskInterrupts_801a693c(uint32_t mask, uint32_t unmask
 }
 
 PPC_NATIVE_OVERRIDE(801A693C, OS____MaskInterrupts_801a693c, uint32_t, (uint32_t mask, uint32_t unmask), (mask, unmask));
+REGISTER_NATIVE_FUNCTION(0x801A689C, OS____MaskInterrupts_801a693c); // USA
 
 // ----------------------------------------------------------------------------
 // EXISelect / EXIDeselect - HLE Stubs (0x801689d0 / 0x80168b00)
@@ -442,6 +452,7 @@ extern "C" uint32_t OSSetPowerCallback_801ab75c(CpuContext* ctx)
 
 // Register the function
 PPC_NATIVE_OVERRIDE(801AB75C, OSSetPowerCallback_801ab75c, uint32_t, (CpuContext* ctx), (ctx));
+REGISTER_NATIVE_FUNCTION(0x801AB6BC, OSSetPowerCallback_801ab75c); // USA
 
 PPC_NATIVE_OVERRIDE(80167F68, EXIImm_80167f68, uint32_t, (uint32_t channel, uint32_t buffer, uint32_t length, uint32_t type, uint32_t callback), (channel, buffer, length, type, callback));
 PPC_NATIVE_OVERRIDE(80168288, EXIDma_80168288, uint32_t, (uint32_t channel, uint32_t buffer, uint32_t length, uint32_t type, uint32_t callback), (channel, buffer, length, type, callback));
@@ -489,7 +500,11 @@ extern "C" int32_t IPCCltInit_80193478(CpuContext* ctx)
     RT_LOG(RT_TAG_OS) << "IPCCltInit_80193478 called: calling IPCInit for buffer setup" << std::endl;
     
     // Sets 0x803867EC/F0/E8 (IPC buffer lo/hi + init flag) from __OSGetIPCBufferLo/Hi.
-    InvokeIndirectCpu(0x80192F7Cu, ctx);
+    if (TranslatedFunctionRegistry::FindByAddressPtr(0x80192EDCu)) {
+        InvokeIndirectCpu(0x80192EDCu, ctx); // USA IPCInit
+    } else {
+        InvokeIndirectCpu(0x80192F7Cu, ctx); // PAL IPCInit
+    }
 
     // Advance the buffer lo pointer by 0x1000 (iosHeap size), matching real IPCCltInit.
     uint32_t bufferLo = Memory::Read32(ctx->gpr[13] + -25620); // 0x803867EC at r13-0x6414
@@ -504,3 +519,4 @@ extern "C" int32_t IPCCltInit_80193478(CpuContext* ctx)
 }
 
 PPC_NATIVE_OVERRIDE(80193478, IPCCltInit_80193478, int32_t, (CpuContext* ctx), (ctx));
+REGISTER_NATIVE_FUNCTION(0x801933D8, IPCCltInit_80193478); // USA

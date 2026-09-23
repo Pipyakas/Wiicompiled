@@ -12,7 +12,10 @@
 #include "ppc_runtime.h"
 #include "runtime_log.h"
 #include "hle/net/network.h"
-#include "generated/RuntimeConfig.h"
+#ifndef MKW_RUNTIME_CONFIG_HEADER
+#define MKW_RUNTIME_CONFIG_HEADER "generated/RuntimeConfig.h"
+#endif
+#include MKW_RUNTIME_CONFIG_HEADER
 #include "os_internal.h"
 
 extern "C" void func_801AADE0(CpuContext* ctx);

@@ -99,6 +99,25 @@ constexpr bool IsGpuFifoAddress(uint32_t addr) {
     return addr >= 0xCC008000u && addr < 0xCC008100u;
 }
 
+// Soft-backed PI page (0xCC003000-0xCC003FFF): early boot writes PI_INTMR before any
+// device HLE runs, and the write value must land in guest-visible storage so a later
+// flat load can observe it. The page is committed RW; slow paths go through Flat* so
+// they share that backing with the fault-handler retry path.
+constexpr bool IsPiMmioAddress(uint32_t addr) {
+    return addr >= 0xCC003000u && addr < 0xCC004000u;
+}
+
+// Soft-backed Hollywood first page (0xCD000000-0xCD000FFF): early boot writes
+// Hollywood+0x34 (and nearby setup) before any device HLE runs. Demand-zero RW
+// shares backing with Flat*/fault-retry the same way the PI page does.
+constexpr bool IsHollywoodMmioAddress(uint32_t addr) {
+    return addr >= 0xCD000000u && addr < 0xCD001000u;
+}
+
+constexpr bool IsSoftMmioAddress(uint32_t addr) {
+    return IsPiMmioAddress(addr) || IsHollywoodMmioAddress(addr);
+}
+
 // Page protections can't cover this: an MMIO write must reach GX HLE with its value or be
 // reported, and a fault record can't carry the value, so this mask/compare sits in front of
 // every flat store instead.

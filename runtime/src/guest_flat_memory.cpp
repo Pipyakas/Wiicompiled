@@ -347,6 +347,9 @@ bool CommitPlaceholder(uint8_t* address, uint64_t size, ProtectionFlags protecti
 // names the fault handler below reads.
 bool IsMmio(uint32_t address) { return MemoryInline::IsMmioAddress(address); }
 bool IsGpuFifo(uint32_t address) { return MemoryInline::IsGpuFifoAddress(address); }
+bool IsPiMmio(uint32_t address) { return MemoryInline::IsPiMmioAddress(address); }
+bool IsHollywoodMmio(uint32_t address) { return MemoryInline::IsHollywoodMmioAddress(address); }
+bool IsSoftMmio(uint32_t address) { return MemoryInline::IsSoftMmioAddress(address); }
 
 void ApplyExecutableProtectionLocked() {
     if (g_base == nullptr) return;
@@ -587,6 +590,16 @@ void Initialize(const std::vector<RegionRequest>& regions) {
     if (!CommitPlaceholder(g_base + 0xCC000000u, 0x02000000u, kProtNone)) {
         throw std::runtime_error(LastErrorText("committing the no-access MMIO window"));
     }
+    // Soft-backed PI page: __start writes PI_INTMR during early boot, before any device
+    // HLE exists. Demand-zero storage + RW lets FlatStore/FlatLoad and a fault-handler
+    // retry share one backing; slow paths in memory.cpp take the IsPiMmioAddress arm.
+    if (!ProtectRange(g_base + 0xCC003000ull, 0x1000ull, kProtReadWrite)) {
+        throw std::runtime_error(LastErrorText("committing the soft PI MMIO page"));
+    }
+    // Soft-backed Hollywood first page (covers early-boot store to 0xCD000034).
+    if (!ProtectRange(g_base + 0xCD000000ull, 0x1000ull, kProtReadWrite)) {
+        throw std::runtime_error(LastErrorText("committing the soft Hollywood MMIO page"));
+    }
 
     ApplyExecutableProtectionLocked();
 #if defined(_WIN32)
@@ -783,6 +796,14 @@ bool HandleAccessViolation(void* faultAddress, bool isWrite) noexcept {
                 "GPU FIFO read blocked", guestAddress, isWrite,
                 "The gather pipe is write-only; nothing can be read back from it. The guest code "
                 "that issued this load needs GX HLE, not a memory access.");
+        }
+        if (IsSoftMmio(guestAddress)) {
+            // Safety net if the init-time RW protect was skipped: open the page and
+            // let the faulting instruction retry against demand-zero backing.
+            const uint64_t page = static_cast<uint64_t>(guestAddress) & ~(kHostPageSize - 1u);
+            if (ProtectRange(g_base + page, kHostPageSize, kProtReadWrite)) {
+                return true;
+            }
         }
         if (isWrite) {
             ReportFatalGuestFault("MMIO write blocked (non-GPU)", guestAddress, isWrite,

@@ -1485,6 +1485,7 @@ extern "C" void GX__CallDisplayList_80172f64(uint32_t listAddr, uint32_t nbytes)
 }
 
 PPC_NATIVE_OVERRIDE_VOID(80172F64, GX__CallDisplayList_80172f64, (uint32_t listAddr, uint32_t nbytes), (listAddr, nbytes));
+REGISTER_NATIVE_FUNCTION(0x80172EC4, GX__CallDisplayList_80172f64); // USA
 
 extern "C" void nw4r__lyt__detail__DrawQuad_800847c0(CpuContext* ctx) {
     uint32_t colors[4];

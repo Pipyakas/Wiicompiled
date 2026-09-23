@@ -3,6 +3,10 @@
 #include "abi_bridge.h"
 #include "hle_stubs.h"
 #include "runtime_log.h"
+#ifndef MKW_RUNTIME_CONFIG_HEADER
+#define MKW_RUNTIME_CONFIG_HEADER "generated/RuntimeConfig.h"
+#endif
+#include MKW_RUNTIME_CONFIG_HEADER
 
 // Defined in hle/os/os_sleep.cpp; the sleep-timer table is file-local there.
 
@@ -670,7 +674,13 @@ void GuestFiberManager::FiberProc(void* param)
         cpu->gpr[1] = Memory::Read32(guestThreadAddr + 0x04u);
         // Load saved LR
         cpu->lr = Memory::Read32(guestThreadAddr + 0x84u);
-        
+        // Force this region's SDA bases after load. OSInitContext / stale
+        // template contexts can leave the opposite region's pointers here
+        // (PAL 8038EFA0/8038CC00 vs USA 8038AC20/80388880), which makes
+        // every translated global access fault or read garbage.
+        cpu->gpr[2] = RuntimeConfig::SDA2_BASE;
+        cpu->gpr[13] = RuntimeConfig::SDA1_BASE;
+
     } catch (const Memory::AccessViolation& e) {
         RT_LOG(RT_TAG_OS) << "Failed to load guest context from 0x" << std::hex << guestThreadAddr
                   << ": " << e.what() << std::dec << std::endl;

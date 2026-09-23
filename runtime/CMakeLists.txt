@@ -243,8 +243,12 @@ list(REMOVE_ITEM SOURCES ${MKW_BASE_PRODUCT_SOURCE} ${MKW_RETRO_REWIND_PRODUCT_S
 # The translator emits the complete, content-addressed source graph. Consuming
 # this one manifest keeps configure independent of the 28k generated function
 # files and of optional Retro Rewind artifacts such as code.map.
+# MKW_TRANSLATED_GENERATED_ROOT selects the translator output tree (PAL "generated"
+# by default; USA builds pass "generated-usa").
+set(MKW_TRANSLATED_GENERATED_ROOT "generated"
+    CACHE STRING "Translator output root relative to the workspace (generated or generated-usa)")
 set(MKW_TRANSLATED_SHARD_MANIFEST
-    "${CMAKE_CURRENT_LIST_DIR}/../generated/build_shards/shards.cmake"
+    "${CMAKE_CURRENT_LIST_DIR}/../${MKW_TRANSLATED_GENERATED_ROOT}/build_shards/shards.cmake"
     CACHE FILEPATH "Translator-owned aggregate shard manifest")
 if(NOT EXISTS "${MKW_TRANSLATED_SHARD_MANIFEST}")
     message(FATAL_ERROR

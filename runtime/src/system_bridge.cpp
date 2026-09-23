@@ -376,23 +376,26 @@ void SystemBridge::Initialize() {
     }
     RT_LOG(RT_TAG_RUNTIME) << "Executed " << dolCount << " main DOL static constructors." << std::endl;
 
-    // StaticR.rel ctors must be run manually since we aren't using OSLink
+    // StaticR.rel ctors must be run manually since we aren't using OSLink.
+    // USA header points at 0x8088F350 (PAL used a mid-table 0x8088F400 start
+    // and a fixed end past the null); walk until the null terminator instead.
     RT_LOG(RT_TAG_RUNTIME) << "Running static constructors for StaticR.rel..." << std::endl;
 
-    // Define range for StaticR.rel .ctors
-    const uint32_t ctorStart = 0x8088f400;
-    const uint32_t ctorEnd = 0x8088f704;
+    const uint32_t ctorStart = 0x8088F350u;
+    const uint32_t ctorEndMax = 0x8088F704u;
 
     int count = 0;
-    for (uint32_t addr = ctorStart; addr < ctorEnd; addr += 4) {
+    int skippedMissing = 0;
+    for (uint32_t addr = ctorStart; addr < ctorEndMax; addr += 4) {
         uint32_t funcAddr = 0;
         try {
             funcAddr = Memory::Read32(addr);
         } catch (...) {
-            continue;
+            break;
         }
 
-        if (funcAddr == 0 || funcAddr == 0xFFFFFFFF) continue;
+        if (funcAddr == 0) break;
+        if (funcAddr == 0xFFFFFFFF) continue;
 
         if (TranslatedFunctionRegistry::FindByAddressPtr(funcAddr)) {
             MkwJmpBuf jumpBuf;
@@ -412,10 +415,13 @@ void SystemBridge::Initialize() {
                 std::cerr << std::dec << " - skipping." << std::endl;
             }
             g_sehJumpTarget = nullptr;
+        } else {
+            ++skippedMissing;
         }
     }
     g_suppressSehReporting = false;
-    RT_LOG(RT_TAG_RUNTIME) << "Executed " << count << " static constructors." << std::endl;
+    RT_LOG(RT_TAG_RUNTIME) << "Executed " << count << " static constructors ("
+              << skippedMissing << " unregistered skipped)." << std::endl;
 }
 
 void SystemBridge::WriteGuestMemorySnapshot(std::ostream& os, const std::filesystem::path& mem1Path) {

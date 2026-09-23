@@ -40,6 +40,7 @@ extern "C" void OS__InitMessageQueue_HLE_801a72fc(CpuContext* ctx)
     }
 }
 REGISTER_NATIVE_FUNCTION(0x801A72FC, OS__InitMessageQueue_HLE_801a72fc);
+REGISTER_NATIVE_FUNCTION(0x801A725C, OS__InitMessageQueue_HLE_801a72fc); // USA
 
 static bool MsgQueueIsFull(uint32_t queuePtr)
 {
@@ -166,6 +167,7 @@ extern "C" int32_t OS__SendMessage_HLE_801a735c(CpuContext* ctx)
         kMsgQueueRecvOffset, kMsgQueueSendOffset);
 }
 REGISTER_NATIVE_FUNCTION(0x801A735C, OS__SendMessage_HLE_801a735c);
+REGISTER_NATIVE_FUNCTION(0x801A72BC, OS__SendMessage_HLE_801a735c); // USA
 
 extern "C" int32_t OS__ReceiveMessage_HLE_801a7424(CpuContext* ctx)
 {
@@ -194,6 +196,7 @@ extern "C" int32_t OS__ReceiveMessage_HLE_801a7424(CpuContext* ctx)
         kMsgQueueSendOffset, kMsgQueueRecvOffset);
 }
 REGISTER_NATIVE_FUNCTION(0x801A7424, OS__ReceiveMessage_HLE_801a7424);
+REGISTER_NATIVE_FUNCTION(0x801A7384, OS__ReceiveMessage_HLE_801a7424); // USA
 
 extern "C" int32_t OS__JamMessage_HLE_801a7500(CpuContext* ctx)
 {
@@ -216,3 +219,4 @@ extern "C" int32_t OS__JamMessage_HLE_801a7500(CpuContext* ctx)
         kMsgQueueRecvOffset, kMsgQueueSendOffset);
 }
 REGISTER_NATIVE_FUNCTION(0x801A7500, OS__JamMessage_HLE_801a7500);
+REGISTER_NATIVE_FUNCTION(0x801A7460, OS__JamMessage_HLE_801a7500); // USA

@@ -14,6 +14,10 @@ extern "C" void GxNotifyGuestRamDmaWrite(uint32_t addr, uint32_t size);
 #include "runtime_config.h"
 #include "runtime_log.h"
 #include "runtime_product.h"
+#ifndef MKW_RUNTIME_CONFIG_HEADER
+#define MKW_RUNTIME_CONFIG_HEADER "generated/RuntimeConfig.h"
+#endif
+#include MKW_RUNTIME_CONFIG_HEADER
 
 #if defined(__ANDROID__)
 extern "C" {
@@ -954,13 +958,14 @@ extern "C" void DVDInit_8015EA1C()
     // to the cover-closed/drive-ready values the SDK leaves after a successful
     // cover check instead of the zeros guest RAM starts with.
     Memory::Write32(0x80386660u, 0);
-    // DVD::GetDriveStatus gates (r13 = 0x8038CC00): -26004 = 0x8038666C,
-    // -26008 = 0x80386668. The first gate reads zero -> early return -1
+    // DVD::GetDriveStatus gates (r13 = SDA1): -26004 = 0x8038666C (PAL),
+    // -26008 = 0x80386668 (PAL). The first gate reads zero -> early return -1
     // (drive busy); the second reads zero -> early return 8 (not ready).
     // Seed both nonzero (drive idle + ready) so the status walk reaches the
     // command-block comparison and returns the real state. (These two plus
     // the drive queue are re-seeded on every call at the top of this
     // function; the translated state machine legitimately zeroes them.)
+    Memory::Write32(RuntimeConfig::SDA1_BASE - 26004u, 0x00010001u);
     Memory::Write32(0x80386730u, 0x80343230u);
     Memory::Write32(0x80386760u, 0);
     Memory::Write32(0x80343550u, 0);
@@ -995,10 +1000,10 @@ extern "C" void DVDInit_8015EA1C()
     Memory::Write32(0x803866E0u, 0);
     // Command-type slot the completion compares against the Inquiry command
     // type (14); seed 14 to take the ready path instead of the cancel branch.
-    Memory::Write32(0x8038CC00u - 29476u, 14);
-    // /dev/di fd slot (0x8037F920): DVDLowInit is HLE'd so the translated
+    Memory::Write32(RuntimeConfig::SDA1_BASE - 29476u, 14);
+    // /dev/di fd slot (PAL 0x8037F920): DVDLowInit is HLE'd so the translated
     // open never runs; seed our stable fd (5) or DI transfers go out on fd 0.
-    Memory::Write32(0x8038CC00u - 29464u, 5);
+    Memory::Write32(RuntimeConfig::SDA1_BASE - 29464u, 5);
 
     // 2. Initialize DVD Context structures (prevent crashes in callbacks)
     constexpr uint32_t kContextBase = 0x803434e0;
@@ -1484,7 +1489,7 @@ extern "C" int32_t DVDLowInit_80164848() {
     try {
         if (Memory::Read32(0x8034355Cu) != 0xFEEBDAEDu)
             Memory::Write32(0x8034355Cu, 0xFEEBDAEDu);
-        Memory::Write32(0x8038CC00u - 29464u, 5);
+        Memory::Write32(RuntimeConfig::SDA1_BASE - 29464u, 5);
     } catch (...) {}
     return 1;
 }

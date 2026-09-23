@@ -8,6 +8,10 @@
 #include "settings_overlay.h"
 #include "fiber_manager.h"
 #include "runtime_log.h"
+#ifndef MKW_RUNTIME_CONFIG_HEADER
+#define MKW_RUNTIME_CONFIG_HEADER "generated/RuntimeConfig.h"
+#endif
+#include MKW_RUNTIME_CONFIG_HEADER
 
 #include <dolphin/vi.h>
 
@@ -774,12 +778,12 @@ void DesktopWatchdogThread() {
             if (Memory::TryRead32(sSys + 104u, gb)) g107 = gb & 0xFFu;
             if (Memory::TryRead32(sSys + 108u, gb)) g108 = (gb >> 24) & 0xFFu;
             uint32_t sStatic = 0;
-            if (Memory::TryRead32(0x8038CC00u - 27712u, sStatic) && sStatic != 0) {
+            if (Memory::TryRead32(RuntimeConfig::SDA1_BASE - 27712u, sStatic) && sStatic != 0) {
                 if (Memory::TryRead32(sStatic + 80u, gb)) g81 = (gb >> 16) & 0xFFu;
             }
-            Memory::TryRead32(0x8038CC00u - 26004u, dvdA);
-            Memory::TryRead32(0x8038CC00u - 26008u, dvdB);
-            Memory::TryRead32(0x8038CC00u - 25872u, dvdC);
+            Memory::TryRead32(RuntimeConfig::SDA1_BASE - 26004u, dvdA);
+            Memory::TryRead32(RuntimeConfig::SDA1_BASE - 26008u, dvdB);
+            Memory::TryRead32(RuntimeConfig::SDA1_BASE - 25872u, dvdC);
         }
         // DiscCheckThread object (*sStatic): vtable, vtable+12 Run target,
         // OSThread* at +8 with its state/suspend/pc/lr, and the +72/+80 words
@@ -791,7 +795,7 @@ void DesktopWatchdogThread() {
         uint32_t dcW72 = 0xFFFFFFFFu, dcW80 = 0xFFFFFFFFu;
         {
             uint32_t sStatic = 0;
-            if (Memory::TryRead32(0x8038CC00u - 27712u, sStatic) && sStatic != 0) {
+            if (Memory::TryRead32(RuntimeConfig::SDA1_BASE - 27712u, sStatic) && sStatic != 0) {
                 dcObj = sStatic;
                 uint32_t vt = 0;
                 if (Memory::TryRead32(sStatic, vt)) {

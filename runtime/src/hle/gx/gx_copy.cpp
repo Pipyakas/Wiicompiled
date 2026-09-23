@@ -106,6 +106,7 @@ PPC_NATIVE_OVERRIDE_VOID(8016fa40, GX__SetCopyFilter_8016fa40, (uint32_t aa, uin
 
 extern "C" void GX__SetDispCopyGamma_8016fc24(uint32_t g) { GXSetDispCopyGamma((GXGamma)g); }
 PPC_NATIVE_OVERRIDE_VOID(8016fc24, GX__SetDispCopyGamma_8016fc24, (uint32_t g), (g));
+REGISTER_NATIVE_FUNCTION(0x8016FB84, GX__SetDispCopyGamma_8016fc24); // USA
 
 // ============================================================================
 // Copy Execution
@@ -132,6 +133,7 @@ extern "C" void GX__CopyDisp_8016fc38(uint32_t da, uint32_t c) {
 }
 
 PPC_NATIVE_OVERRIDE_VOID(8016fc38, GX__CopyDisp_8016fc38, (uint32_t da, uint32_t c), (da, c));
+REGISTER_NATIVE_FUNCTION(0x8016FB98, GX__CopyDisp_8016fc38); // USA
 
 
 extern "C" void GX__CopyTex_8016fd74(uint32_t da, uint32_t c) {
@@ -158,3 +160,4 @@ extern "C" void GX__CopyTex_8016fd74(uint32_t da, uint32_t c) {
     GXSetTexCopySrc(rawSrcLeft, rawSrcTop, rawSrcWidth, rawSrcHeight);
 }
 PPC_NATIVE_OVERRIDE_VOID(8016fd74, GX__CopyTex_8016fd74, (uint32_t da, uint32_t c), (da, c));
+REGISTER_NATIVE_FUNCTION(0x8016FCD4, GX__CopyTex_8016fd74); // USA

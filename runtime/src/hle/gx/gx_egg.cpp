@@ -120,3 +120,10 @@ extern "C" void EGG__AsyncDisplay__endRender_HLE_8020ff9c(CpuContext* ctx) {
     InvokeIndirectCpu(0x8016ED50u, ctx);
 }
 PPC_NATIVE_OVERRIDE_VOID(8020FF9C, EGG__AsyncDisplay__endRender_HLE_8020ff9c, (CpuContext* ctx), (ctx));
+
+extern "C" void EGG__AsyncDisplay__endRender_HLE_usa(CpuContext* ctx) {
+    uint32_t p = ctx->gpr[3]; ctx->gpr[3] = p; ctx->lr = 0x8020FEFC;
+    InvokeIndirectCpu(0x80219F14u, ctx);
+    InvokeIndirectCpu(0x8016ECB0u, ctx);
+}
+REGISTER_NATIVE_FUNCTION(0x8020FEFC, EGG__AsyncDisplay__endRender_HLE_usa); // USA

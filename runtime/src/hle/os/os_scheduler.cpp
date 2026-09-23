@@ -375,6 +375,7 @@ extern "C" void SelectThread_801a9c08(CpuContext* ctx)
 }
 
 PPC_NATIVE_OVERRIDE_VOID(801A9C08, SelectThread_801a9c08, (CpuContext* ctx), (ctx));
+REGISTER_NATIVE_FUNCTION(0x801A9B68, SelectThread_801a9c08); // USA
 
 // ============================================================================
 // OSWakeupThread HLE - drain a thread queue and mark threads runnable
@@ -462,6 +463,7 @@ void OS_HLE_WakeupThreadNoReschedule(CpuContext* ctx, uint32_t waitQueue)
 }
 
 PPC_NATIVE_OVERRIDE_VOID(801AAAA4, OSWakeupThread_HLE_801aaaa4, (CpuContext* ctx), (ctx));
+REGISTER_NATIVE_FUNCTION(0x801AAA04, OSWakeupThread_HLE_801aaaa4); // USA
 
 extern "C" void OSSleepThread_HLE_801aa9b8(CpuContext* ctx);
 
@@ -514,6 +516,7 @@ extern "C" void OSLockMutex_HLE_801a7ee4(CpuContext* ctx)
     OS__RestoreInterrupts_801a65d4(irqState);
 }
 PPC_NATIVE_OVERRIDE_VOID(801A7EE4, OSLockMutex_HLE_801a7ee4, (CpuContext* ctx), (ctx));
+REGISTER_NATIVE_FUNCTION(0x801A7E44, OSLockMutex_HLE_801a7ee4); // USA
 
 extern "C" void OSUnlockMutex_HLE_801a7fc0(CpuContext* ctx)
 {
@@ -560,6 +563,10 @@ extern "C" void OSUnlockMutex_HLE_801a7fc0(CpuContext* ctx)
     OS__RestoreInterrupts_801a65d4(irqState);
 }
 PPC_NATIVE_OVERRIDE_VOID(801A7FC0, OSUnlockMutex_HLE_801a7fc0, (CpuContext* ctx), (ctx));
+REGISTER_NATIVE_FUNCTION(0x801A7F20, OSUnlockMutex_HLE_801a7fc0); // USA
+// USA __OSUnlockAllMutex (PAL 801A8088); no dedicated HLE body — invoke the
+// translated entry via exact address. Registered here only if a C++ HLE exists;
+// os_thread falls back between 801A8054 / 801A8088 at the call site.
 
 // Temporary guest-thread dump: logs every guest OSThread on the thread list
 // with state/suspend/prio/effective-prio/srr0(pc)/lr/queue. Lets logcat answer

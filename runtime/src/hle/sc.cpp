@@ -53,6 +53,7 @@ extern "C" uint32_t SCCheckStatus_HLE()
 }
 
 PPC_NATIVE_OVERRIDE(801B0220, SCCheckStatus_HLE, uint32_t, (), ());
+REGISTER_NATIVE_FUNCTION(0x801B0180, SCCheckStatus_HLE); // USA
 
 // 0x801B1BE4 -> SCGetAspectRatio()
 // Returns: 0 = 4:3, 1 = 16:9
@@ -62,6 +63,7 @@ extern "C" uint32_t SCGetAspectRatio_HLE()
 }
 
 PPC_NATIVE_OVERRIDE(801B1BE4, SCGetAspectRatio_HLE, uint32_t, (), ());
+REGISTER_NATIVE_FUNCTION(0x801B1B98, SCGetAspectRatio_HLE); // USA
 
 // 0x801B1CAC -> SCGetEuRgb60Mode()
 // Returns: 0 = PAL50, 1 = PAL60/RGB60
@@ -74,6 +76,34 @@ extern "C" uint32_t SCGetEuRgb60Mode_HLE()
 }
 
 PPC_NATIVE_OVERRIDE(801B1CAC, SCGetEuRgb60Mode_HLE, uint32_t, (), ());
+REGISTER_NATIVE_FUNCTION(0x801B1C6C, SCGetEuRgb60Mode_HLE); // USA
+
+// SCGetLanguage: PAL 801B1D0C / USA 801B1CE4. Reads console language from SYSCONF;
+// no HLE existed. Return English for E/P discs (JPN=0, English=1) so DWC/settings
+// paths never see an out-of-range language.
+extern "C" uint32_t SCGetLanguage_HLE()
+{
+    const char region = DiscRegionByte();
+    if (region == 'J') {
+        return 0; // Japanese
+    }
+    return 1; // English (NTSC-U and default)
+}
+
+PPC_NATIVE_OVERRIDE(801B1D0C, SCGetLanguage_HLE, uint32_t, (), ());
+REGISTER_NATIVE_FUNCTION(0x801B1CE4, SCGetLanguage_HLE); // USA
+
+// SCGetSimpleAddressData: PAL 801B2074 / USA 801B1FD4. Reads settings.txt via
+// SYSCONF/NAND IPC we do not service; real signature is (buffer) -> 1|0.
+// Returning 0 (failure) is handled by the game ("Can't get SimpleAddressData").
+extern "C" uint32_t SCGetSimpleAddressData_HLE(uint32_t buffer)
+{
+    (void)buffer;
+    return 0;
+}
+
+PPC_NATIVE_OVERRIDE(801B2074, SCGetSimpleAddressData_HLE, uint32_t, (uint32_t buffer), (buffer));
+REGISTER_NATIVE_FUNCTION(0x801B1FD4, SCGetSimpleAddressData_HLE); // USA
 
 // The managed NAND intentionally starts without a console-owned setting.txt.
 // DWC nevertheless requires the Wii product code and serial number so it can
@@ -92,6 +122,7 @@ extern "C" uint32_t SCGetProductArea_HLE()
 }
 
 PPC_NATIVE_OVERRIDE(801B23A0, SCGetProductArea_HLE, uint32_t, (), ());
+REGISTER_NATIVE_FUNCTION(0x801B2384, SCGetProductArea_HLE); // USA
 
 extern "C" uint32_t SCGetProductCode_HLE()
 {
@@ -109,6 +140,7 @@ extern "C" uint32_t SCGetProductCode_HLE()
 }
 
 PPC_NATIVE_OVERRIDE(801B2424, SCGetProductCode_HLE, uint32_t, (), ());
+REGISTER_NATIVE_FUNCTION(0x801B2428, SCGetProductCode_HLE); // USA
 
 extern "C" uint32_t SCGetProductSN_HLE(uint32_t serialAddress)
 {
@@ -122,6 +154,8 @@ extern "C" uint32_t SCGetProductSN_HLE(uint32_t serialAddress)
 }
 
 PPC_NATIVE_OVERRIDE(801B2460, SCGetProductSN_HLE, uint32_t, (uint32_t serialAddress), (serialAddress));
+// USA SN candidate 801B2500 (prologue, 1 caller); 801B24AC is a bit-flag leaf, not SN.
+REGISTER_NATIVE_FUNCTION(0x801B2500, SCGetProductSN_HLE); // USA
 
 extern "C" uint32_t SCGetProductGameRegion_HLE()
 {
@@ -134,6 +168,7 @@ extern "C" uint32_t SCGetProductGameRegion_HLE()
 }
 
 PPC_NATIVE_OVERRIDE(801B24C8, SCGetProductGameRegion_HLE, uint32_t, (), ());
+// 801B24C8 is the same function start in both regions; PPC_NATIVE_OVERRIDE covers it.
 
 // These stubs make the game think all titles are installed; otherwise it checks title ID
 // 0x00010004524d4350 ("RMCP", Mario Kart Wii PAL) and reports error code 5.
@@ -148,6 +183,7 @@ extern "C" uint32_t OS__IsTitleInstalled(uint32_t titleIdHi, uint32_t titleIdLo)
 }
 
 PPC_NATIVE_OVERRIDE(801AE4A0, OS__IsTitleInstalled, uint32_t, (uint32_t titleIdHi, uint32_t titleIdLo), (titleIdHi, titleIdLo));
+REGISTER_NATIVE_FUNCTION(0x801AE400, OS__IsTitleInstalled); // USA
 
 // 0x801AD1D4 -> OS__CheckInstall(requiredBlocks, titleIdHi, titleIdLo, outFlagsPtr): returns 0 with
 // outFlagsPtr = 0x3 (bit0 has data, bit1 has update; bit2 would be needs-blocks) i.e. fully installed.
@@ -163,3 +199,4 @@ extern "C" uint32_t OS__CheckInstall(uint32_t requiredBlocks, uint32_t titleIdHi
 }
 
 PPC_NATIVE_OVERRIDE(801AD1D4, OS__CheckInstall, uint32_t, (uint32_t requiredBlocks, uint32_t titleIdHi, uint32_t titleIdLo, uint32_t outFlagsPtr), (requiredBlocks, titleIdHi, titleIdLo, outFlagsPtr));
+REGISTER_NATIVE_FUNCTION(0x801AD134, OS__CheckInstall); // USA

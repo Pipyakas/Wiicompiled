@@ -626,6 +626,9 @@ namespace {
 } // namespace
 
 uint8_t MemoryInline::Read8Slow(uint32_t addr) {
+    if (IsSoftMmioAddress(addr)) {
+        return FlatLoad<uint8_t>(addr);
+    }
     if (IsMmioAddress(addr)) {
         ThrowMmioReadBlocked(addr, sizeof(uint8_t));
     }
@@ -634,6 +637,9 @@ uint8_t MemoryInline::Read8Slow(uint32_t addr) {
 }
 
 uint16_t MemoryInline::Read16Slow(uint32_t addr) {
+    if (IsSoftMmioAddress(addr)) {
+        return FlatLoad<uint16_t>(addr);
+    }
     if (IsMmioAddress(addr)) {
         ThrowMmioReadBlocked(addr, sizeof(uint16_t));
     }
@@ -642,6 +648,9 @@ uint16_t MemoryInline::Read16Slow(uint32_t addr) {
 }
 
 uint32_t MemoryInline::Read32Slow(uint32_t addr) {
+    if (IsSoftMmioAddress(addr)) {
+        return FlatLoad<uint32_t>(addr);
+    }
     if (IsMmioAddress(addr)) {
         ThrowMmioReadBlocked(addr, sizeof(uint32_t));
     }
@@ -651,6 +660,9 @@ uint32_t MemoryInline::Read32Slow(uint32_t addr) {
 }
 
 uint64_t MemoryInline::Read64Slow(uint32_t addr) {
+    if (IsSoftMmioAddress(addr)) {
+        return FlatLoad<uint64_t>(addr);
+    }
     if (IsMmioAddress(addr)) {
         ThrowMmioReadBlocked(addr, sizeof(uint64_t));
     }
@@ -659,6 +671,12 @@ uint64_t MemoryInline::Read64Slow(uint32_t addr) {
 }
 
 float MemoryInline::ReadFloat32Slow(uint32_t addr) {
+    if (IsSoftMmioAddress(addr)) {
+        const auto bits = FlatLoad<uint32_t>(addr);
+        float value;
+        std::memcpy(&value, &bits, sizeof(value));
+        return value;
+    }
     if (IsMmioAddress(addr)) {
         ThrowMmioReadBlocked(addr, sizeof(float));
     }
@@ -670,6 +688,12 @@ float MemoryInline::ReadFloat32Slow(uint32_t addr) {
 }
 
 double MemoryInline::ReadFloat64Slow(uint32_t addr) {
+    if (IsSoftMmioAddress(addr)) {
+        const auto bits = FlatLoad<uint64_t>(addr);
+        double value;
+        std::memcpy(&value, &bits, sizeof(value));
+        return value;
+    }
     if (IsMmioAddress(addr)) {
         ThrowMmioReadBlocked(addr, sizeof(double));
     }
@@ -685,6 +709,10 @@ void MemoryInline::Write8Slow(uint32_t addr, uint8_t val) {
         GX_HLE_FIFO_Write8(val);
         return;
     }
+    if (IsSoftMmioAddress(addr)) {
+        FlatStore<uint8_t>(addr, val);
+        return;
+    }
     if (IsMmioAddress(addr)) {
         throw Memory::AccessViolation(addr, sizeof(val), "MMIO write blocked (non-GPU)");
     }
@@ -696,6 +724,10 @@ void MemoryInline::Write16Slow(uint32_t addr, uint16_t val) {
         GX_HLE_FIFO_Write16(val);
         return;
     }
+    if (IsSoftMmioAddress(addr)) {
+        FlatStore<uint16_t>(addr, val);
+        return;
+    }
     if (IsMmioAddress(addr)) {
         throw Memory::AccessViolation(addr, sizeof(val), "MMIO write blocked (non-GPU)");
     }
@@ -705,6 +737,10 @@ void MemoryInline::Write16Slow(uint32_t addr, uint16_t val) {
 void MemoryInline::Write32Slow(uint32_t addr, uint32_t val) {
     if (IsGpuFifoAddress(addr)) {
         GX_HLE_FIFO_Write32(val);
+        return;
+    }
+    if (IsSoftMmioAddress(addr)) {
+        FlatStore<uint32_t>(addr, val);
         return;
     }
     if (IsMmioAddress(addr)) {
@@ -723,6 +759,10 @@ void MemoryInline::Write64Slow(uint32_t addr, uint64_t val) {
         GX_HLE_FIFO_Write32(static_cast<uint32_t>(val));
         return;
     }
+    if (IsSoftMmioAddress(addr)) {
+        FlatStore<uint64_t>(addr, val);
+        return;
+    }
     if (IsMmioAddress(addr)) {
         throw Memory::AccessViolation(addr, sizeof(val), "MMIO write blocked (non-GPU)");
     }
@@ -735,6 +775,10 @@ void MemoryInline::WriteFloat32Slow(uint32_t addr, double val) {
     const uint32_t bits = ConvertPpcDoubleToSingleBits(val);
     if (IsGpuFifoAddress(addr)) {
         GX_HLE_FIFO_WriteFloat(PpcSingleBitsToFloat(bits));
+        return;
+    }
+    if (IsSoftMmioAddress(addr)) {
+        FlatStore<uint32_t>(addr, bits);
         return;
     }
     if (IsMmioAddress(addr)) {
@@ -752,6 +796,10 @@ void MemoryInline::WriteFloat64Slow(uint32_t addr, double val) {
 
     if (IsGpuFifoAddress(addr)) {
         GX_HLE_FIFO_WriteFloat(static_cast<float>(val));
+        return;
+    }
+    if (IsSoftMmioAddress(addr)) {
+        FlatStore<uint64_t>(addr, bits);
         return;
     }
     if (IsMmioAddress(addr)) {

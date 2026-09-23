@@ -10,7 +10,10 @@
 #include <sstream>
 #include <unordered_map>
 #include <vector>
-#include "generated/RuntimeConfig.h"
+#ifndef MKW_RUNTIME_CONFIG_HEADER
+#define MKW_RUNTIME_CONFIG_HEADER "generated/RuntimeConfig.h"
+#endif
+#include MKW_RUNTIME_CONFIG_HEADER
 #include "runtime_log.h"
 
 // Nothing reads CpuContext by offset; these asserts just canary accidental field reordering
@@ -475,12 +478,25 @@ void InitializePersistentCpuContext() {
     // Idempotent by contract: generated mod code calls this again before each of
     // its initializers, after the boot path has already established r1 and live
     // guest state in the persistent context. Never clear the context here; only
-    // seed the PowerPC ABI environmental registers if no one has yet:
+    // seed (or repair) the PowerPC ABI environmental registers:
     // r2 = _SDA2_BASE_ (read-only small data), r13 = _SDA_BASE_.
-    if (g_persistentCpu.gpr[2] == 0) {
+    // Repair when zero OR when either region's SDA base leaked in as the
+    // opposite register's value (PAL template on an USA build, or a swapped
+    // r2/r13). Never clobber a live non-SDA value.
+    constexpr uint32_t kPalSda1 = 0x8038CC00u;
+    constexpr uint32_t kPalSda2 = 0x8038EFA0u;
+    const uint32_t r2 = g_persistentCpu.gpr[2];
+    const uint32_t r13 = g_persistentCpu.gpr[13];
+    const bool r2IsSda =
+        r2 == 0 || r2 == kPalSda2 || r2 == kPalSda1 ||
+        r2 == RuntimeConfig::SDA1_BASE || r2 == RuntimeConfig::SDA2_BASE;
+    const bool r13IsSda =
+        r13 == 0 || r13 == kPalSda1 || r13 == kPalSda2 ||
+        r13 == RuntimeConfig::SDA1_BASE || r13 == RuntimeConfig::SDA2_BASE;
+    if (r2IsSda) {
         g_persistentCpu.gpr[2] = RuntimeConfig::SDA2_BASE;
     }
-    if (g_persistentCpu.gpr[13] == 0) {
+    if (r13IsSda) {
         g_persistentCpu.gpr[13] = RuntimeConfig::SDA1_BASE;
     }
 }

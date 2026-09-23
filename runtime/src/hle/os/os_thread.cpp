@@ -11,6 +11,10 @@
 #include "fiber_manager.h"
 #include "runtime_log.h"
 #include "os_internal.h"
+#ifndef MKW_RUNTIME_CONFIG_HEADER
+#define MKW_RUNTIME_CONFIG_HEADER "generated/RuntimeConfig.h"
+#endif
+#include MKW_RUNTIME_CONFIG_HEADER
 
 namespace OsHleInternal {
 void RemoveThreadFromList(uint32_t threadPtr)
@@ -221,7 +225,13 @@ void UnlockAllThreadMutexes(CpuContext* cpu, uint32_t threadPtr)
     }
     CpuContextScope scope(cpu);
     cpu->gpr[3] = threadPtr;
-    InvokeIndirectCpu(0x801A8088u, cpu); // __OSUnlockAllMutex
+    // Prefer the USA __OSUnlockAllMutex entry; fall back to the PAL address so
+    // exact-match dispatch still works when only one side is registered.
+    if (TranslatedFunctionRegistry::FindByAddressPtr(0x801A8054u)) {
+        InvokeIndirectCpu(0x801A8054u, cpu);
+    } else {
+        InvokeIndirectCpu(0x801A8088u, cpu);
+    }
 }
 
 // Shared tail of OSExitThread/OSCancelThread: clears context, delists if detached, marks
@@ -347,7 +357,17 @@ extern "C" void OSCreateThread_HLE_801a9e84(CpuContext* ctx)
             cpu->gpr[3] = threadPtr;
             cpu->gpr[4] = entryFunc;
             cpu->gpr[5] = alignedStack - 8;
-            InvokeIndirectCpu(0x801A20BCu, cpu); // OSInitContext
+            // Prefer USA OSInitContext (801A201C); PAL is 801A20BC.
+            if (TranslatedFunctionRegistry::FindByAddressPtr(0x801A201Cu)) {
+                InvokeIndirectCpu(0x801A201Cu, cpu);
+            } else {
+                InvokeIndirectCpu(0x801A20BCu, cpu);
+            }
+            // OSInitContext writes SDA from the template context; force this
+            // region's SDA bases so FiberProc never loads the opposite region's
+            // r2/r13 (PAL 8038EFA0/8038CC00 on an USA build).
+            ::Memory::Write32(threadPtr + 0x08u, RuntimeConfig::SDA2_BASE);
+            ::Memory::Write32(threadPtr + 0x34u, RuntimeConfig::SDA1_BASE);
         }
 
         if (IsThpVideoDecoderEntry(entryFunc)) {
@@ -361,7 +381,8 @@ extern "C" void OSCreateThread_HLE_801a9e84(CpuContext* ctx)
 
         }
 
-        ::Memory::Write32(threadPtr + 0x84u, 0x801AA0F0u); // LR = OSExitThread
+        // LR = OSExitThread. USA entry is 801AA050 (PAL 801AA0F0).
+        ::Memory::Write32(threadPtr + 0x84u, 0x801AA050u);
         ::Memory::Write32(threadPtr + 0x0Cu, entryArg);    // r3 = argument
 
         // Stack info
@@ -435,6 +456,7 @@ extern "C" void OSCreateThread_HLE_801a9e84(CpuContext* ctx)
     }
 }
 PPC_NATIVE_OVERRIDE_VOID(801A9E84, OSCreateThread_HLE_801a9e84, (CpuContext* ctx), (ctx));
+REGISTER_NATIVE_FUNCTION(0x801A9DE4, OSCreateThread_HLE_801a9e84); // USA
 
 extern "C" void OSExitThread_HLE_801aa0f0(CpuContext* ctx)
 {
@@ -461,6 +483,7 @@ extern "C" void OSExitThread_HLE_801aa0f0(CpuContext* ctx)
     OS__RestoreInterrupts_801a65d4(irqState);
 }
 PPC_NATIVE_OVERRIDE_VOID(801AA0F0, OSExitThread_HLE_801aa0f0, (CpuContext* ctx), (ctx));
+REGISTER_NATIVE_FUNCTION(0x801AA050, OSExitThread_HLE_801aa0f0); // USA
 
 extern "C" void OSCancelThread_HLE_801aa1d4(CpuContext* ctx)
 {
@@ -503,6 +526,7 @@ extern "C" void OSCancelThread_HLE_801aa1d4(CpuContext* ctx)
     OS__RestoreInterrupts_801a65d4(irqState);
 }
 PPC_NATIVE_OVERRIDE_VOID(801AA1D4, OSCancelThread_HLE_801aa1d4, (CpuContext* ctx), (ctx));
+REGISTER_NATIVE_FUNCTION(0x801AA134, OSCancelThread_HLE_801aa1d4); // USA
 
 extern "C" void OSJoinThread_HLE_801aa3ac(CpuContext* ctx)
 {
@@ -562,6 +586,7 @@ extern "C" void OSJoinThread_HLE_801aa3ac(CpuContext* ctx)
     cpu->gpr[3] = result;
 }
 PPC_NATIVE_OVERRIDE_VOID(801AA3AC, OSJoinThread_HLE_801aa3ac, (CpuContext* ctx), (ctx));
+REGISTER_NATIVE_FUNCTION(0x801AA30C, OSJoinThread_HLE_801aa3ac); // USA
 
 extern "C" void OSDetachThread_HLE_801aa4ec(CpuContext* ctx)
 {
@@ -591,7 +616,10 @@ extern "C" void OSDetachThread_HLE_801aa4ec(CpuContext* ctx)
 
     OS__RestoreInterrupts_801a65d4(irqState);
 }
-PPC_NATIVE_OVERRIDE_VOID(801AA4EC, OSDetachThread_HLE_801aa4ec, (CpuContext* ctx), (ctx));
+// PAL Detach is 801AA4EC, but USA Detach is 801AA44C (801AA4EC is USA Resume).
+// Do NOT PPC_NATIVE_OVERRIDE 801AA4EC for Detach — that would hijack USA Resume.
+REGISTER_NATIVE_FUNCTION(0x801AA44C, OSDetachThread_HLE_801aa4ec); // USA Detach
+REGISTER_NATIVE_FUNCTION(0x801AA4EC, OSResumeThread_HLE_801aa58c); // USA Resume
 
 extern "C" void OSSuspendThread_HLE_801aa6a8(CpuContext* ctx)
 {
@@ -648,6 +676,7 @@ extern "C" void OSSuspendThread_HLE_801aa6a8(CpuContext* ctx)
     OS__RestoreInterrupts_801a65d4(irqState);
 }
 PPC_NATIVE_OVERRIDE_VOID(801AA6A8, OSSuspendThread_HLE_801aa6a8, (CpuContext* ctx), (ctx));
+// USA Suspend unresolved (no prologue in 801AA600-801AA800); 801AA784 has 6 bls if needed later.
 
 // OSResumeThread (0x801aa58c)
 // Resumes a suspended thread, making it eligible for scheduling.
