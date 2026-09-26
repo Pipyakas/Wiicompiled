@@ -1184,8 +1184,12 @@ extern "C" void DVDInit_8015EA1C()
     BuildAndPublishRuntimeFst();
 
     // Initialize the translated DVD filesystem so it can use the published FST.
+    // USA __DVDFSInit is 0x8015DE7C (PAL 0x8015DF1C is a -0xA0-shifted twin).
     constexpr uint32_t kDvdFsInitAddress = 0x8015DF1C;
-    if (TranslatedFunctionRegistry::FindByAddressPtr(kDvdFsInitAddress)) {
+    constexpr uint32_t kDvdFsInitAddressUsa = 0x8015DE7C;
+    if (TranslatedFunctionRegistry::FindByAddressPtr(kDvdFsInitAddressUsa)) {
+        InvokeIndirectCpu(kDvdFsInitAddressUsa, &GetPersistentCpuContext());
+    } else if (TranslatedFunctionRegistry::FindByAddressPtr(kDvdFsInitAddress)) {
         InvokeIndirectCpu(kDvdFsInitAddress, &GetPersistentCpuContext());
     }
 
@@ -1193,6 +1197,8 @@ extern "C" void DVDInit_8015EA1C()
     initializing = false;
 }
 PPC_NATIVE_OVERRIDE_VOID(8015EA1C, DVDInit_8015EA1C, (), ());
+// USA DVDInit (0x8015E97C) is the -0xA0-shifted twin of PAL 0x8015EA1C.
+REGISTER_NATIVE_FUNCTION(0x8015E97C, DVDInit_8015EA1C); // USA
 
 // FST-only DVD functions run translated so mods can override them safely.
 
@@ -1494,6 +1500,8 @@ extern "C" int32_t DVDLowInit_80164848() {
     return 1;
 }
 PPC_NATIVE_OVERRIDE(80164848, DVDLowInit_80164848, int32_t, (), ());
+// USA DVDLowInit (0x801647A8) is the -0xA0-shifted twin of PAL 0x80164848.
+REGISTER_NATIVE_FUNCTION(0x801647A8, DVDLowInit_80164848); // USA
 
 // Throttled diagnostic: log the command blocks the translated DVD state
 // machine issues (Inquiry vs ReadDiskID vs Read) so arrivals after the first
@@ -1731,6 +1739,8 @@ PPC_NATIVE_OVERRIDE(80165708, DVDLowUnencryptedRead_80165708, int32_t, (uint32_t
 
 extern "C" int32_t DVDCheckDevice_801643FC() { return 1; } // Ready
 PPC_NATIVE_OVERRIDE(801643FC, DVDCheckDevice_801643FC, int32_t, (), ());
+// USA DVDCheckDevice (0x8016435C) is the -0xA0-shifted twin of PAL 0x801643FC.
+REGISTER_NATIVE_FUNCTION(0x8016435C, DVDCheckDevice_801643FC); // USA
 
 extern "C" int32_t DVDLowClearCoverInterrupt_80166964(uint32_t cb) { return 1; }
 PPC_NATIVE_OVERRIDE(80166964, DVDLowClearCoverInterrupt_80166964, int32_t, (uint32_t cb), (cb));

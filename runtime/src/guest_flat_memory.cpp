@@ -596,6 +596,11 @@ void Initialize(const std::vector<RegionRequest>& regions) {
     if (!ProtectRange(g_base + 0xCC003000ull, 0x1000ull, kProtReadWrite)) {
         throw std::runtime_error(LastErrorText("committing the soft PI MMIO page"));
     }
+    // Soft-backed MEM interface page: OS::Init writes __MEMRegs[16] (0xCC004020)
+    // during memory-interface setup, before any device HLE.
+    if (!ProtectRange(g_base + 0xCC004000ull, 0x1000ull, kProtReadWrite)) {
+        throw std::runtime_error(LastErrorText("committing the soft MEM MMIO page"));
+    }
     // Soft-backed Hollywood first page (covers early-boot store to 0xCD000034).
     if (!ProtectRange(g_base + 0xCD000000ull, 0x1000ull, kProtReadWrite)) {
         throw std::runtime_error(LastErrorText("committing the soft Hollywood MMIO page"));

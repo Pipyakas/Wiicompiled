@@ -434,6 +434,8 @@ extern "C" int32_t NAND_IOS_Open_HLE(uint32_t pathPtr, uint32_t mode) {
     return fd;
 }
 PPC_NATIVE_OVERRIDE(801938F8, NAND_IOS_Open_HLE, int32_t, (uint32_t pathPtr, uint32_t mode), (pathPtr, mode));
+// USA IOS::Open (0x80193858) is the -0xA0-shifted twin of PAL 0x801938F8.
+REGISTER_NATIVE_FUNCTION(0x80193858, NAND_IOS_Open_HLE); // USA
 
 extern "C" void NAND_IOS_OpenBody_HLE_801938FC(CpuContext* ctx) {
     const int32_t result = NAND_IOS_Open_HLE(ctx->gpr[3], ctx->gpr[4]);
@@ -473,6 +475,8 @@ extern "C" int32_t NAND_IOS_Close_HLE(uint32_t fd) {
     return ISFS_OK;
 }
 PPC_NATIVE_OVERRIDE(80193AD8, NAND_IOS_Close_HLE, int32_t, (uint32_t fd), (fd));
+// USA IOS::Close (0x80193A38) is the -0xA0-shifted twin of PAL 0x80193AD8.
+REGISTER_NATIVE_FUNCTION(0x80193A38, NAND_IOS_Close_HLE); // USA
 
 extern "C" int32_t NAND_IOS_Read_HLE(uint32_t fd, uint32_t bufferPtr, uint32_t length) {
     auto* handle = GetHandle(fd);
@@ -497,6 +501,8 @@ extern "C" int32_t NAND_IOS_Read_HLE(uint32_t fd, uint32_t bufferPtr, uint32_t l
     return static_cast<int32_t>(bytesRead);
 }
 PPC_NATIVE_OVERRIDE(80193C80, NAND_IOS_Read_HLE, int32_t, (uint32_t fd, uint32_t bufferPtr, uint32_t length), (fd, bufferPtr, length));
+// USA IOS::Read (0x80193BE0) is the -0xA0-shifted twin of PAL 0x80193C80.
+REGISTER_NATIVE_FUNCTION(0x80193BE0, NAND_IOS_Read_HLE); // USA
 
 extern "C" int32_t NAND_IOS_Write_HLE(uint32_t fd, uint32_t bufferPtr, uint32_t length) {
     auto* handle = GetHandle(fd);
@@ -522,6 +528,8 @@ extern "C" int32_t NAND_IOS_Write_HLE(uint32_t fd, uint32_t bufferPtr, uint32_t 
     return static_cast<int32_t>(bytesWritten);
 }
 PPC_NATIVE_OVERRIDE(80193E88, NAND_IOS_Write_HLE, int32_t, (uint32_t fd, uint32_t bufferPtr, uint32_t length), (fd, bufferPtr, length));
+// USA IOS::Write (0x80193DE8) is the -0xA0-shifted twin of PAL 0x80193E88.
+REGISTER_NATIVE_FUNCTION(0x80193DE8, NAND_IOS_Write_HLE); // USA
 
 extern "C" int32_t NAND_IOS_Seek_HLE(uint32_t fd, int32_t offset, int32_t whence) {
     auto* handle = GetHandle(fd);
@@ -539,6 +547,8 @@ extern "C" int32_t NAND_IOS_Seek_HLE(uint32_t fd, int32_t offset, int32_t whence
     return static_cast<int32_t>(handle->position);
 }
 PPC_NATIVE_OVERRIDE(80194070, NAND_IOS_Seek_HLE, int32_t, (uint32_t fd, int32_t offset, int32_t whence), (fd, offset, whence));
+// USA IOS::Seek (0x80193FD0) is the -0xA0-shifted twin of PAL 0x80194070.
+REGISTER_NATIVE_FUNCTION(0x80193FD0, NAND_IOS_Seek_HLE); // USA
 
 // ============================================================================
 // IOS_Ioctl HLE - Handles filesystem commands

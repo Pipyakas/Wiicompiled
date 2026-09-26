@@ -10,7 +10,18 @@ Logs: `%LOCALAPPDATA%/WiiCompiled/Logs/base_*/console.log`.
 Upstream: `https://github.com/patchzyy/Wiicompiled` (tracked locally as `upstream-main`,
 tip `6458ec6`). Local diverged ~57 ahead / 55 behind; no rebase attempted (too invasive mid-debug).
 
-## Status: NOT PLAYABLE — black screen, guest alive but parked in disc-error branch
+## Status: NOT PLAYABLE — fatal #6/#7 DVD hangs cleared; fatal #8 TRK missing-target patched pending retest
+
+### Fatal #7 (after #6): `func_80165990` int3
+- Same pattern: real `b .` at `0x801659FC` / `0x80165A1C` → empty self-goto → clang deleted → `int3` at `func_80165990+0x67C`.
+- Call chain: `__start` → `OS::Init` → `DVD::InquiryAsync` → `stateReady` → `func_80161574` → `func_8016189C` → `func_80165990`.
+- Fix: force success edges `loc_801659FC→loc_80165A00` and `loc_80165A1C→loc_80165A20` (DAED cover check bypass). Batch-patched **43** DVD/OS-range `func_8016*`/`func_801A*` empty self-loops the same way (`// Unblock USA boot: was empty self-loop …`).
+- **emit-build-shards cache gotcha:** metadata `sourceBundlePath` pointed at `base_translation_sources.bin` (430MB); emit preferred the stale bundle over edited `functions/*.cpp`. Must set `"sourceBundlePath": null` in `base_translation_output.json` (and refresh per-function `size`/`sha256`) before re-emit, or edits never land in shards. Bundle still on disk for reference.
+
+### Fatal #8 (after #7): missing target `0x80020684`
+- `InvokeIndirectCpu: target 0x80020684 not translated` from `OS::IsTitleInstalled` body at `func_801AE4A4` walking `_ctors` table at `0x80244D40` (`bctrl` via CTR).
+- USA DOL real prologues in TRK range that PAL MAP does **not** label: `0x80020684`, `0x800206C0`, `0x800207F0` (MAP stops `TRKTargetSupportRequest` at `0x80020638` which is mid-function on USA).
+- Fix: HLE stubs `TRKTargetSupportRequest_HLE_80020684` / `…800206C0` / `…800207F0` in `runtime/src/hle/trk.cpp` + `REGISTER_NATIVE_FUNCTION` (USA). Re-emit + exclusive ninja after native reg change.
 
 Live signal (pid 40600, USA DATA):
 - `presented≈+150–300/5s`, `viadv≈vipost≈viret` advancing, PC cycles
@@ -45,16 +56,31 @@ Live signal (pid 40600, USA DATA):
 9. `dco[]` probe: DiscCheckThread object state in watchdog.
 Also: merged upstream `c2289e4` (`os_sleep.cpp`).
 
+## Boot fatals fixed this slice (USA desktop)
+
+- Fatal #1–#4: EXIInit USA `0x80168F00` + EXI alias block; AI MMIO poll stub
+  `AIHwPollStub_801A12B8`; MEM soft-MMIO `0xCC004000-0xCC004FFF`
+  (`IsMemMmioAddress` + `ProtectRange`); PCH rebuild after `memory_access.h` edit.
+- Fatal #5: `InvokeIndirectCpu: target 0x800149A0 not translated`.
+  DOL: `0x80014990` is prior-function epilogue (lwz/mflr/addi/blr); real
+  `atof` prologue is `0x800149A0`. Data tables store `80 01 49 A0` at
+  `0x8026C9F0/CA40/CA90`. MAP+recomp.yml corrected; HLE
+  `Atof_HLE_800149A0` registered in `runtime/src/hle/c_stdio.cpp`.
+- Fatal #6: structured exception `0x80000003` at `func_801668C4+0x677` (`int3` after call `func_801A2530`); guest CTR/LR showed DVD path; host stack captured after moving `DumpHostStackTrace`/`WriteFatalLogImpl` BEFORE `ShowRuntimeFatalPopup` in `runtime/src/main.cpp` `ReportFatalSehAndExit`.
+  - Guest DOL truth: `0x80166958` and `0x80166978` are real `b .` (`0x48000000`). Translator emitted empty `goto` self-loops; clang deleted them as unreachable → `int3` fall-through.
+  - Root cause of taking hang path: USA DI cover context at `0x8033F160` unseeded (`r6+12=0` not `0xFEEBDAED`), `cmplwi` vs `0xDAED` fails; also busy flag path. PAL MAP placeholder / merged Low* functions; native override `0x80166964` bypassed because entry is mid-merge `func_801668C4` via `InvokeDirectCpu` from `func_8016189C`.
+  - Fixes: (1) `main.cpp` crash dump order; (2) `func_801668C4.cpp` volatile self-spin at `0x80166958`/`0x80166978` + forced gotos to `loc_8016695C` / `loc_8016697C` / `loc_80166A0C` success edges; (3) `CxxLinearCodeGenerator.EmitGotoUnlessFallthrough` emits side-effecting spin for self-jumps + `SelfLoopCodeGenTests.cs`.
+  - `emit-build-shards` MUST re-run after editing `generated-usa/functions/*.cpp` because bodies are `#line`-included into `build_shards/base_common/shard_*.cpp`.
+- USA DOL is non-standard 7-text/11-data layout (`DolFile.cs` constants);
+  entry `0x800060A4`, T0 `0x80004000+0x2460`, T1 `0x800072C0+0x23DA80`.
+- PowerShell: never cast `0x80…` literals to `[uint32]` (Int32 overflow);
+  use `[uint32]::Parse(hex, HexNumber)` or byte-wise BE assemble.
+
 ## TODO
 
-1. DvdThread start: why `dth=0` with READY/susp=0 fiber `T` — trace `EGG::Thread::__ct` →
-   `OSCreateThread` → `OSResumeThread` → `FiberProc` EGG-start deferral (`vtable+12`); fiber likely never switched in.
-2. Cause vs symptom: whether `g81=1` disc-error branch is caused by the dead DvdThread or vice versa;
-   capture `GetDriveStatus` return distribution (`ret` stuck `0xffffffff`).
-3. Audit Run/calc direct-call targets for HLE/translated/missing status.
-4. True USA fix blocked on: real USA MAP (placeholder is a PAL copy — breaks boundaries,
-   e.g. HID at `0x8012E598` vs PAL `0x8012E638`) + no .NET SDK to rebuild translator +
-   ~582 HLE addresses to re-derive.
+1. Re-run emit-build-shards + exclusive ninja after native reg changes; update NOTES after each slice.
+2. DvdThread start / disc-error chain (prior notes) once boot clears remaining missing-target fatals.
+3. True USA fix blocked on: real USA MAP (placeholder is a PAL copy) + ~582 HLE addresses to re-derive.
 
 ## Environment notes
 
@@ -64,4 +90,5 @@ Also: merged upstream `c2289e4` (`os_sleep.cpp`).
   (plain copies, not junctions). `C:/mkw-ws/generated` (15283 fns) ≠ repo `generated` (29637 fns).
 - Android parked: phone `d1cadee8` (sdm845), scrcpy at `C:\Program Files (Portable)\scrcpy\scrcpy.exe`
   — run `-s d1cadee8 -S --power-off-on-close --window-title Wiicompiled --no-audio` when needed.
+- Tooling / PowerShell caveats: PowerShell cannot take python heredocs; write `.py` to `%TEMP%` and run it; DOL parse needs BE32; never cast `0x80…` to `[uint32]` literals in params.
 - Standing: commit regularly + push, `git fetch origin`, check upstream for updates.

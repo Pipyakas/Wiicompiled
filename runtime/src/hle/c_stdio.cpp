@@ -5,9 +5,36 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <sstream>
 #include <string>
+
+// USA: real atof body starts at 0x800149A0 (stwu prologue). MAP labels
+// 0x80014990, which is the previous function's epilogue only; guest data
+// tables store 0x800149A0 and InvokeIndirectCpu looks that up.
+extern "C" double Atof_HLE_800149A0(uint32_t strAddr)
+{
+    if (!strAddr) {
+        return 0.0;
+    }
+    try {
+        char buf[64];
+        size_t n = 0;
+        while (n + 1 < sizeof(buf)) {
+            const uint8_t c = Memory::Read8(strAddr + static_cast<uint32_t>(n));
+            buf[n++] = static_cast<char>(c);
+            if (c == 0) {
+                break;
+            }
+        }
+        buf[n] = '\0';
+        return std::strtod(buf, nullptr);
+    } catch (const Memory::AccessViolation&) {
+        return 0.0;
+    }
+}
+REGISTER_NATIVE_FUNCTION(0x800149A0, Atof_HLE_800149A0); // USA
 
 // Hardware boundary used by the translated MetroWerks stdio implementation.
 // The original routine forwards completed FILE-buffer writes to UART/EXI or TRK.

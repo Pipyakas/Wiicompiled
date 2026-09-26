@@ -1068,11 +1068,13 @@ LONG ReportFatalSehAndExit(EXCEPTION_POINTERS* info) {
                      << " at host address 0x" << record->ExceptionInformation[1];
     }
     popupDetails << ".\n\nThe process transcript and crash log contain the full CPU and stack diagnostics.";
-    ShowRuntimeFatalPopup("a native crash occurred", popupDetails.str());
+    // Dump host stack and write crash artifacts BEFORE the modal MessageBox.
+    // Otherwise an automated run blocks forever on the dialog and never
+    // records the host RIP/stack that identifies the faulting instruction.
     DumpHostStackTrace();
-
     WriteFatalLogImpl("seh");
-    
+    ShowRuntimeFatalPopup("a native crash occurred", popupDetails.str());
+
     // CRITICAL: Explicitly flush all output to ensure visibility with PowerShell redirection
     std::cerr << '\n';
     RT_LOG(RT_TAG_RUNTIME) << "===== FLUSHING OUTPUT BEFORE EXIT =====" << std::endl;

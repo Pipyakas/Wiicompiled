@@ -124,6 +124,18 @@ extern "C" void AIClockInit_801A1138(uint32_t clock_mode)
 
 PPC_NATIVE_OVERRIDE_VOID(801A1138, AIClockInit_801A1138, (uint32_t clock_mode), (clock_mode));
 
+// USA OS::Init calls 0x801A12B8 (between __AIClockInit and __InitAudioSystem);
+// the body polls AI MMIO at 0xCD800180 which we do not back.
+extern "C" uint32_t AIHwPollStub_801A12B8()
+{
+    static int log_count = 0;
+    if (log_count++ < 5) {
+        RT_LOG(RT_TAG_AUDIO) << "AIHwPollStub_801A12B8 called (stubbed; skipped 0xCD800180 poll)" << std::endl;
+    }
+    return 0;
+}
+REGISTER_NATIVE_FUNCTION(0x801A12B8, AIHwPollStub_801A12B8); // USA
+
 extern "C" void OSInitAudioSystem_801A1358()
 {
     AIClockInit_801A1138(1);

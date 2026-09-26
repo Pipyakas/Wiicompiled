@@ -247,6 +247,7 @@ REGISTER_NATIVE_FUNCTION(0x801A6640, SetInterruptMask_801a66e0); // USA
 PPC_NATIVE_OVERRIDE(801A00E0, OS__ExceptionInit_801a00e0, uint32_t, (uint32_t r3, uint32_t r4, uint32_t r5, uint32_t r6, uint32_t r7, uint32_t r8, uint32_t r20), (r3, r4, r5, r6, r7, r8, r20));
 REGISTER_NATIVE_FUNCTION(0x801A0040, OS__ExceptionInit_801a00e0); // USA
 PPC_NATIVE_OVERRIDE(80168FA0, EXIInit_80168fa0, uint32_t, (), ());
+REGISTER_NATIVE_FUNCTION(0x80168F00, EXIInit_80168fa0); // USA
 REGISTER_NATIVE_FUNCTION(0x801A65F8, __OSSetInterruptHandler_801a65f8_hle);
 REGISTER_NATIVE_FUNCTION(0x801A6558, __OSSetInterruptHandler_801a65f8_hle); // USA
 REGISTER_NATIVE_FUNCTION(0x801A69BC, __OSUnmaskInterrupts_801a69bc_hle);
@@ -391,6 +392,12 @@ EXI_CHANNEL_STUB(EXISync_80168380, 5, "chan=")
 //           Stub: Return 1 (success) to bypass internal callback logic that causes the 0x0 crash.
 EXI_CHANNEL_STUB(EXIUnlock_80169260, 5, "chan=")
 
+// RVL::EXILock / EXILock
+// Address: 0x80169164 (USA 0x801690C4)
+// Behavior: Claims the EXI channel for a transfer; real body polls CSRegister MMIO.
+//           Stub: always report locked so callers proceed.
+EXI_CHANNEL_STUB(EXILock_80169164, 5, "chan=")
+
 // ----------------------------------------------------------------------------
 // OSSetPowerCallback (0x801AB75C): sets the power-button callback pointer in the SDA (r13);
 // the real STM/IOS registration is stubbed.
@@ -458,6 +465,17 @@ PPC_NATIVE_OVERRIDE(80167F68, EXIImm_80167f68, uint32_t, (uint32_t channel, uint
 PPC_NATIVE_OVERRIDE(80168288, EXIDma_80168288, uint32_t, (uint32_t channel, uint32_t buffer, uint32_t length, uint32_t type, uint32_t callback), (channel, buffer, length, type, callback));
 PPC_NATIVE_OVERRIDE(80168380, EXISync_80168380, uint32_t, (uint32_t channel), (channel));
 PPC_NATIVE_OVERRIDE(80169260, EXIUnlock_80169260, uint32_t, (uint32_t channel), (channel));
+PPC_NATIVE_OVERRIDE(80169164, EXILock_80169164, uint32_t, (uint32_t channel), (channel));
+
+// USA: EXI block sits at PAL −0xA0; without these the translated bodies touch 0xCD0068xx.
+REGISTER_NATIVE_FUNCTION(0x80168930, EXISelect_801689d0);          // USA EXISelect
+REGISTER_NATIVE_FUNCTION(0x80168A60, EXIDeselect_80168b00);         // USA EXIDeselect
+REGISTER_NATIVE_FUNCTION(0x80167EC8, EXIImm_80167f68);              // USA EXIImm
+REGISTER_NATIVE_FUNCTION(0x801681E8, EXIDma_80168288);              // USA EXIDma
+REGISTER_NATIVE_FUNCTION(0x801682E0, EXISync_80168380);             // USA EXISync
+REGISTER_NATIVE_FUNCTION(0x80167DD8, SetExiInterruptMask_80167e78); // USA SetExiInterruptMask
+REGISTER_NATIVE_FUNCTION(0x801691C0, EXIUnlock_80169260);           // USA EXIUnlock
+REGISTER_NATIVE_FUNCTION(0x801690C4, EXILock_80169164);             // USA EXILock
 
 // ----------------------------------------------------------------------------
 // IPC Register Access Stubs (0x80193020 write / 0x80193010 read): Broadway-IOS MMIO,

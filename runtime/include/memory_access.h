@@ -107,6 +107,13 @@ constexpr bool IsPiMmioAddress(uint32_t addr) {
     return addr >= 0xCC003000u && addr < 0xCC004000u;
 }
 
+// Soft-backed MEM interface page (0xCC004000-0xCC004FFF): OS::Init writes __MEMRegs[16]
+// (0xCC004020) during memory-interface setup before any device HLE. Same demand-zero RW
+// contract as the PI page above.
+constexpr bool IsMemMmioAddress(uint32_t addr) {
+    return addr >= 0xCC004000u && addr < 0xCC005000u;
+}
+
 // Soft-backed Hollywood first page (0xCD000000-0xCD000FFF): early boot writes
 // Hollywood+0x34 (and nearby setup) before any device HLE runs. Demand-zero RW
 // shares backing with Flat*/fault-retry the same way the PI page does.
@@ -115,7 +122,7 @@ constexpr bool IsHollywoodMmioAddress(uint32_t addr) {
 }
 
 constexpr bool IsSoftMmioAddress(uint32_t addr) {
-    return IsPiMmioAddress(addr) || IsHollywoodMmioAddress(addr);
+    return IsPiMmioAddress(addr) || IsMemMmioAddress(addr) || IsHollywoodMmioAddress(addr);
 }
 
 // Page protections can't cover this: an MMIO write must reach GX HLE with its value or be
