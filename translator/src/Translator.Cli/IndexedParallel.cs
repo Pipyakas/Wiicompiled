@@ -34,7 +34,15 @@ internal static class IndexedParallel
             // Preserve the recursive translator's historical behavior: a
             // single worker failure is reported as that failure, while a
             // genuinely multi-failure pass remains aggregate-shaped.
-            throw ex.InnerExceptions.Count == 1 ? ex.InnerExceptions[0] : ex;
+            if (ex.InnerExceptions.Count == 1)
+            {
+                var only = ex.InnerExceptions[0];
+                Console.Error.WriteLine($"[IndexedParallel] worker failure at index batch: {only.GetType().FullName}: {only.Message}");
+                Console.Error.WriteLine(only.StackTrace);
+                throw only;
+            }
+
+            throw;
         }
     }
 }

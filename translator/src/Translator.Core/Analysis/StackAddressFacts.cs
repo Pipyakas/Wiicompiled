@@ -50,9 +50,9 @@ internal sealed class StackAddressFacts
 
     public bool TryResolve(IrAddress address, out int offset)
     {
-        if (TryResolveRegister(address.Base, out var baseOffset))
+        if (TryResolveRegister(address.Base, out var baseOffset) &&
+            TryApplyOffset("add", baseOffset, address.Offset, out offset))
         {
-            offset = checked(baseOffset + address.Offset);
             return true;
         }
 
@@ -156,17 +156,21 @@ internal sealed class StackAddressFacts
     private static bool TryApplyOffset(string op, int baseOffset, int constant, out int offset)
     {
         offset = 0;
-        switch (op)
+        long result = op switch
         {
-            case "add":
-                offset = checked(baseOffset + constant);
-                return true;
-            case "sub":
-                offset = checked(baseOffset - constant);
-                return true;
-            default:
-                return false;
+            "add" => (long)baseOffset + constant,
+            "sub" => (long)baseOffset - constant,
+            _ => long.MinValue,
+        };
+        if (op is not ("add" or "sub") ||
+            result < int.MinValue ||
+            result > int.MaxValue)
+        {
+            return false;
         }
+
+        offset = (int)result;
+        return true;
     }
 
     private static string GetRegisterBaseName(string name)

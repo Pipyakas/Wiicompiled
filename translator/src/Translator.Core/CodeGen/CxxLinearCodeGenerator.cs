@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -419,7 +419,7 @@ public sealed partial class CxxLinearCodeGenerator
 
                         case IrJump jump:
                             EmitNormalizePairedStateOnEdge(body, "    ", block.Label, jump.TargetLabel, pairedOut, pairedIn, pairedEdgeLiveness.In);
-                            EmitGotoUnlessFallthrough(body, "    ", block.Label, jump.TargetLabel, nextBlockLabels, labelNames, signature.Name);
+                            EmitGotoUnlessFallthrough(body, "    ", block.Label, jump.TargetLabel, nextBlockLabels, labelNames, signature.Name, allowSpinOnSelfJump: true);
                             break;
 
                         case IrBranch br:
@@ -434,10 +434,10 @@ public sealed partial class CxxLinearCodeGenerator
                             // only when it actually carries something.
                             var falseEdge = new StringBuilder();
                             EmitNormalizePairedStateOnEdge(falseEdge, "        ", block.Label, br.FalseLabel, pairedOut, pairedIn, pairedEdgeLiveness.In);
-                            EmitGotoUnlessFallthrough(falseEdge, "        ", block.Label, br.FalseLabel, nextBlockLabels, labelNames, signature.Name);
+                            EmitGotoUnlessFallthrough(falseEdge, "        ", block.Label, br.FalseLabel, nextBlockLabels, labelNames, signature.Name, allowSpinOnSelfJump: false);
                             body.AppendLine($"    if ({cond}) {{");
                             EmitNormalizePairedStateOnEdge(body, "        ", block.Label, br.TrueLabel, pairedOut, pairedIn, pairedEdgeLiveness.In);
-                            EmitGotoUnlessFallthrough(body, "        ", block.Label, br.TrueLabel, nextBlockLabels, labelNames, signature.Name);
+                            EmitGotoUnlessFallthrough(body, "        ", block.Label, br.TrueLabel, nextBlockLabels, labelNames, signature.Name, allowSpinOnSelfJump: false);
                             if (falseEdge.Length != 0)
                             {
                                 body.AppendLine("    } else {");
@@ -473,7 +473,7 @@ public sealed partial class CxxLinearCodeGenerator
                             if (!string.IsNullOrWhiteSpace(succ))
                             {
                                 EmitNormalizePairedStateOnEdge(body, "    ", block.Label, succ!, pairedOut, pairedIn, pairedEdgeLiveness.In);
-                                EmitGotoUnlessFallthrough(body, "    ", block.Label, succ!, nextBlockLabels, labelNames, signature.Name);
+                                EmitGotoUnlessFallthrough(body, "    ", block.Label, succ!, nextBlockLabels, labelNames, signature.Name, allowSpinOnSelfJump: false);
                             }
                             else
                             {
@@ -828,7 +828,8 @@ public sealed partial class CxxLinearCodeGenerator
         string targetLabel,
         IReadOnlyDictionary<string, string?> nextBlockLabels,
         Dictionary<string, string> labelNames,
-        string functionName)
+        string functionName,
+        bool allowSpinOnSelfJump)
     {
         if (nextBlockLabels.TryGetValue(currentLabel, out var nextLabel) &&
             string.Equals(nextLabel, targetLabel, StringComparison.OrdinalIgnoreCase))
@@ -837,6 +838,30 @@ public sealed partial class CxxLinearCodeGenerator
         }
 
         var cxxLabel = RequireLabel(targetLabel, labelNames, currentLabel, functionName);
+        var isSelfJump = string.Equals(targetLabel, currentLabel, StringComparison.OrdinalIgnoreCase) ||
+            (labelNames.TryGetValue(currentLabel, out var currentCxxLabel) &&
+             string.Equals(cxxLabel, currentCxxLabel, StringComparison.OrdinalIgnoreCase));
+        if (isSelfJump && allowSpinOnSelfJump)
+        {
+            uint address = 0;
+            const string prefix = "loc_";
+            var candidate = targetLabel.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                ? targetLabel
+                : cxxLabel;
+            if (candidate.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                uint.TryParse(
+                    candidate.AsSpan(prefix.Length),
+                    System.Globalization.NumberStyles.HexNumber,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var parsedAddress))
+            {
+                address = parsedAddress;
+            }
+
+            sb.AppendLine($"{pad}for (;;) {{ volatile uint32_t guest_spin = 0x{address:X8}u; (void)guest_spin; }}");
+            return;
+        }
+
         sb.AppendLine($"{pad}goto {cxxLabel};");
     }
 

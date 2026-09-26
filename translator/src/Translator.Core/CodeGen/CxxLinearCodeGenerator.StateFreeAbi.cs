@@ -37,6 +37,19 @@ public sealed partial class CxxLinearCodeGenerator
 
         public static readonly Regex LrStore = new(@"(?m)^\s*ctx->lr\s*=\s*[^;]+;\s*\r?\n?", Options);
 
+        /// <summary>
+        /// Full-line stores to <c>ctx->hidN</c>, indexed by HID number. Used when the
+        /// refined state-free contract does not own that HID, so a leaf-cached mtspr
+        /// flush must be dropped rather than rewritten to a native local that has no
+        /// corresponding parameter.
+        /// </summary>
+        public static readonly Regex[] HidStore =
+        {
+            new(@"(?m)^\s*ctx->hid0\s*=\s*[^;]+;\s*\r?\n?", Options),
+            new(@"(?m)^\s*ctx->hid1\s*=\s*[^;]+;\s*\r?\n?", Options),
+            new(@"(?m)^\s*ctx->hid2\s*=\s*[^;]+;\s*\r?\n?", Options),
+        };
+
         public static readonly Regex PsqLInline = new(
             @"PPC_PsqLInline<(?<w>\d+)u,\s*(?<i>\d+)u>\(ctx,\s*", Options);
 
@@ -704,8 +717,16 @@ public sealed partial class CxxLinearCodeGenerator
                 body = body.Replace($"ctx->gqr[{gqr}u]", $"native_gqr{gqr}", StringComparison.Ordinal);
             }
         for (var hid = 0; hid < 3; ++hid)
+        {
+            // Demanded-output refinement can clear HidPossibleWriteMask for a
+            // write the body still performs (leaf-cached mtspr flush). Rewrite
+            // when the contract owns the HID; otherwise strip the dead store so
+            // the state-free clone never retains CpuContext access.
             if (((contract.HidReadBeforeWriteMask | contract.HidPossibleWriteMask) & (1 << hid)) != 0)
                 body = body.Replace($"ctx->hid{hid}", $"native_hid{hid}", StringComparison.Ordinal);
+            else
+                body = StateFreePatterns.HidStore[hid].Replace(body, string.Empty);
+        }
 
         if (boundaryContextTargets is { Count: > 0 })
         {

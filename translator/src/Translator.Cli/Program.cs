@@ -1509,6 +1509,7 @@ int RunTranslateRecursive(string[] argsTail)
         var totalDuration = endTime - startTime;
         Console.WriteLine($"[translator] Translation failed at {endTime:HH:mm:ss}, total time: {totalDuration.TotalSeconds:F2} seconds");
         Console.WriteLine($"[translator] Error: {ex.Message}");
+        Console.WriteLine(ex.ToString());
         throw; // Re-throw the exception to maintain original behavior
     }
 
